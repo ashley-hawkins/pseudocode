@@ -9,7 +9,7 @@ use crate::epic_token::{self, Token};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct GotoStatement {
-    line_number: usize,
+    line_number: Spanned<usize>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -19,15 +19,18 @@ struct ReturnStatement<'a> {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct SwapStatement<'a> {
-    ident_1: &'a str,
-    ident_2: &'a str,
+    ident_1: Spanned<&'a str>,
+    ident_2: Spanned<&'a str>,
 }
+
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+struct Block<'a>(Vec<Spanned<Statement<'a>>>);
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct IfStatement<'a> {
     condition: Spanned<Expr<'a>>,
-    then_branch: Vec<Statement<'a>>,
-    else_branch: Option<Vec<Statement<'a>>>,
+    then_branch: Block<'a>,
+    else_branch: Option<Block<'a>>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -35,18 +38,18 @@ struct ForStatement<'a> {
     loop_variable: &'a str,
     start_expr: Spanned<Expr<'a>>,
     end_expr: Spanned<Expr<'a>>,
-    body: Vec<Statement<'a>>,
+    body: Block<'a>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct WhileStatement<'a> {
     condition: Spanned<Expr<'a>>,
-    body: Vec<Statement<'a>>,
+    body: Block<'a>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct AssignmentStatement<'a> {
-    identifier: &'a str,
+    identifier: Spanned<&'a str>,
     expression: Spanned<Expr<'a>>,
 }
 
@@ -160,15 +163,15 @@ enum Statement<'a> {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct ProcedureDefinition<'a> {
-    pub name: &'a str,
-    pub parameters: Vec<&'a str>,
-    pub body: Vec<Statement<'a>>,
+    pub name: Spanned<&'a str>,
+    pub parameters: Spanned<Vec<Spanned<&'a str>>>,
+    pub body: Block<'a>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct AstRoot<'a> {
     pub procedures: Vec<ProcedureDefinition<'a>>,
-    pub statements: Vec<Statement<'a>>,
+    pub statements: Block<'a>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -243,28 +246,33 @@ pub fn parse_pseudocode_program<
 
         // Boolean operators
 
-        let fold_binary_operation = move |lhs,
-                                     op: Spanned<Token>,
-                                     rhs,
-                                     extra: &mut chumsky::input::MapExtra<
-            '_,
-            '_,
-            I,
-            extra::Full<Rich<'_, Token<'_>>, (), ()>,
-        >| Spanned {
-            inner: Expr::BinaryOp {
-                left: Box::new(lhs),
-                op: Spanned {
-                    inner: match BinaryOperator::try_from(op.inner) {
-                        Ok(bin_op) => bin_op,
-                        Err(_) => unreachable!(),
+        fn fold_binary_operation<
+            'src,
+            'b,
+            I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
+        >(
+            lhs: Spanned<Expr<'src>>,
+            op: Spanned<Token<'src>>,
+            rhs: Spanned<Expr<'src>>,
+            extra: &mut chumsky::input::MapExtra<
+                'src,
+                'b,
+                I,
+                extra::Full<Rich<'src, Token<'src>>, (), ()>,
+            >,
+        ) -> Spanned<Expr<'src>> {
+            Spanned {
+                inner: Expr::BinaryOp {
+                    left: Box::new(lhs),
+                    op: Spanned {
+                        inner: BinaryOperator::try_from(op.inner).unwrap(),
+                        span: op.span,
                     },
-                    span: op.span,
+                    right: Box::new(rhs),
                 },
-                right: Box::new(rhs),
-            },
-            span: extra.span(),
-        };
+                span: extra.span(),
+            }
+        }
 
         let or_operation = infix(left(0), just(Token::Or).spanned(), fold_binary_operation);
         let and_operation = infix(left(1), just(Token::And).spanned(), fold_binary_operation);
@@ -329,19 +337,23 @@ pub fn parse_pseudocode_program<
     });
 
     let statement = recursive(|statement| {
-        let block = statement.repeated().collect::<Vec<_>>();
+        let block = statement
+            .spanned()
+            .repeated()
+            .collect::<Vec<_>>()
+            .map(Block);
 
         let indented_block = block.delimited_by(just(Token::Indent), just(Token::Dedent));
 
         let goto_statement = select! {
-            epic_token::Token::NumberLiteral(line_num) => Statement::from(GotoStatement { line_number: line_num.parse().unwrap() })
+            epic_token::Token::NumberLiteral(line_num) =>  line_num.parse().unwrap()
         }
-            .delimited_by(
-                just([Token::Goto, Token::Line]),
-                just(Token::Newline)
-            );
+        .spanned()
+        .map(|line_number| Statement::from(GotoStatement { line_number }))
+        .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
 
         let assignment_statement = select! { epic_token::Token::Identifier(ident) => ident }
+            .spanned()
             .then_ignore(just(epic_token::Token::Assign))
             .then(expr.clone())
             .then_ignore(just(Token::Newline))
@@ -353,8 +365,9 @@ pub fn parse_pseudocode_program<
             });
 
         let swap_statement = select! { epic_token::Token::Identifier(ident) => ident }
+            .spanned()
             .then_ignore(just(epic_token::Token::Swap))
-            .then(select! { epic_token::Token::Identifier(ident) => ident })
+            .then(select! { epic_token::Token::Identifier(ident) => ident }.spanned())
             .then_ignore(just(Token::Newline))
             .map(|(ident_1, ident_2)| Statement::from(SwapStatement { ident_1, ident_2 }));
 
@@ -415,20 +428,26 @@ pub fn parse_pseudocode_program<
         ))
     });
 
-    let block = statement.repeated().collect::<Vec<_>>();
+    let block = statement
+        .spanned()
+        .repeated()
+        .collect::<Vec<_>>()
+        .map(Block);
     let indented_block = block
         .clone()
         .delimited_by(just(Token::Indent), just(Token::Dedent));
 
     let procedure = just(Token::Procedure)
-        .ignore_then(select! { epic_token::Token::Identifier(name) => name })
+        .ignore_then(select! { epic_token::Token::Identifier(name) => name }.spanned())
         .then(
             select! { epic_token::Token::Identifier(param) => param }
+                .spanned()
                 .separated_by(just(Token::Comma))
                 .collect::<Vec<_>>()
                 .or_not()
                 .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
-                .map(|params| params.unwrap_or_default()),
+                .map(|params| params.unwrap_or_default())
+                .spanned(),
         )
         .then_ignore(just([Token::Colon, Token::Newline]))
         .then(indented_block.clone())
@@ -495,12 +514,7 @@ Procedure SyntaxTest(a, b):
 
         assert!(result.output().is_some());
         let ast_root = result.unwrap();
-        assert_eq!(
-            ast_root,
-            AstRoot {
-                statements: vec![Statement::Goto(GotoStatement { line_number: 10 })],
-                procedures: vec![]
-            }
-        );
+
+        todo!();
     }
 }
