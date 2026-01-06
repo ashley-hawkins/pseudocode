@@ -8,64 +8,53 @@ use chumsky::{
 use crate::epic_token::{self, Token};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-struct GotoStatement {
-    line_number: Spanned<usize>,
+pub struct GotoStatement {
+    pub line_number: Spanned<usize>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct ReturnStatement<'a> {
-    expr: Option<Spanned<Expr<'a>>>,
+pub struct ReturnStatement<'a> {
+    pub expr: Option<Spanned<Expr<'a>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-struct SwapStatement<'a> {
-    ident_1: Spanned<&'a str>,
-    ident_2: Spanned<&'a str>,
+pub struct SwapStatement<'a> {
+    pub ident_1: Spanned<&'a str>,
+    pub ident_2: Spanned<&'a str>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct Block<'a>(Vec<Spanned<Statement<'a>>>);
+pub struct Block<'a>(Vec<Spanned<Statement<'a>>>);
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct IfStatement<'a> {
-    condition: Spanned<Expr<'a>>,
-    then_branch: Block<'a>,
-    else_branch: Option<Block<'a>>,
-}
-
-#[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct ForStatement<'a> {
-    loop_variable: &'a str,
-    start_expr: Spanned<Expr<'a>>,
-    end_expr: Spanned<Expr<'a>>,
-    body: Block<'a>,
+pub struct IfStatement<'a> {
+    pub condition: Spanned<Expr<'a>>,
+    pub then_branch: Block<'a>,
+    pub else_branch: Option<Block<'a>>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct WhileStatement<'a> {
-    condition: Spanned<Expr<'a>>,
-    body: Block<'a>,
+pub struct ForStatement<'a> {
+    pub loop_variable: &'a str,
+    pub start_expr: Spanned<Expr<'a>>,
+    pub end_expr: Spanned<Expr<'a>>,
+    pub body: Block<'a>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct AssignmentStatement<'a> {
-    identifier: Spanned<&'a str>,
-    expression: Spanned<Expr<'a>>,
+pub struct WhileStatement<'a> {
+    pub condition: Spanned<Expr<'a>>,
+    pub body: Block<'a>,
 }
 
-enum SingleValue {
-    Number(f64),
-    Boolean(bool),
-}
-
-enum Value {
-    None,
-    Single(SingleValue),
-    Array(Vec<SingleValue>),
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub struct AssignmentStatement<'a> {
+    pub identifier: Spanned<&'a str>,
+    pub expression: Spanned<Expr<'a>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum BinaryOperator {
+pub enum BinaryOperator {
     Add,
     Sub,
     Mul,
@@ -83,7 +72,7 @@ enum BinaryOperator {
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-enum BinaryOperationFromTokenError<'a> {
+pub enum BinaryOperationFromTokenError<'a> {
     #[error("Token is not a binary operator: {0:?}")]
     NotABinaryOperator(Token<'a>),
 }
@@ -111,13 +100,13 @@ impl<'a> TryFrom<Token<'a>> for BinaryOperator {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-enum UnaryOperator {
+pub enum UnaryOperator {
     Neg,
     Not,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-enum ArrayIndex<'a> {
+pub enum ArrayIndex<'a> {
     SingleIndex(Box<Spanned<Expr<'a>>>),
     Slice {
         start: Option<Box<Spanned<Expr<'a>>>>,
@@ -127,7 +116,7 @@ enum ArrayIndex<'a> {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-enum Expr<'a> {
+pub enum Expr<'a> {
     NumberLiteral(f64),
     BooleanLiteral(bool),
     VariableAccess(&'a str),
@@ -151,7 +140,7 @@ enum Expr<'a> {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, derive_more::From)]
-enum Statement<'a> {
+pub enum Statement<'a> {
     Goto(GotoStatement),
     Swap(SwapStatement<'a>),
     Assignment(AssignmentStatement<'a>),
