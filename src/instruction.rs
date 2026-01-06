@@ -1,3 +1,5 @@
+use chumsky::span::SimpleSpan;
+
 enum BinaryOperation {
     Add,
     Subtract,
@@ -44,7 +46,7 @@ enum Instruction<Target> {
     Push(Value),
     PushFromEnvironment(String),
     PopIntoEnvironment(String),
-    Binary(BinaryOperation),
+    Binary{op: BinaryOperation, lhs_span: SimpleSpan, rhs_span: SimpleSpan},
     Unary(UnaryOperation),
     // The same as a jump but it pushes a new environment frame to the procedure stack (which is separate from the instruction stack)
     FunctionCall { target: Target, arg_count: usize },

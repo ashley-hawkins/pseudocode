@@ -1,10 +1,11 @@
 use chumsky::{
     input::ValueInput,
-    pratt::{self, Associativity, Operator, infix, left, postfix, prefix},
+    pratt::{infix, left, postfix, prefix},
     prelude::*,
+    span::Spanned,
 };
 
-use crate::epic_token::{self, Token};
+use crate::epic_token::{self, Operator, Token};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct GotoStatement {
@@ -13,7 +14,7 @@ struct GotoStatement {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct ReturnStatement<'a> {
-    expr: Option<Expr<'a>>,
+    expr: Option<Spanned<Expr<'a>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -24,30 +25,29 @@ struct SwapStatement<'a> {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct IfStatement<'a> {
-    condition: Expr<'a>,
+    condition: Spanned<Expr<'a>>,
     then_branch: Vec<Statement<'a>>,
     else_branch: Option<Vec<Statement<'a>>>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-// for ... to ... do
 struct ForStatement<'a> {
     loop_variable: &'a str,
-    start_expr: Expr<'a>,
-    end_expr: Expr<'a>,
+    start_expr: Spanned<Expr<'a>>,
+    end_expr: Spanned<Expr<'a>>,
     body: Vec<Statement<'a>>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct WhileStatement<'a> {
-    condition: Expr<'a>,
+    condition: Spanned<Expr<'a>>,
     body: Vec<Statement<'a>>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 struct AssignmentStatement<'a> {
     identifier: &'a str,
-    expression: Expr<'a>,
+    expression: Spanned<Expr<'a>>,
 }
 
 enum SingleValue {
@@ -87,10 +87,10 @@ enum UnaryOperator {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 enum ArrayIndex<'a> {
-    SingleIndex(Box<Expr<'a>>),
+    SingleIndex(Box<Spanned<Expr<'a>>>),
     Slice {
-        start: Option<Box<Expr<'a>>>,
-        end: Option<Box<Expr<'a>>>,
+        start: Option<Box<Spanned<Expr<'a>>>>,
+        end: Option<Box<Spanned<Expr<'a>>>>,
     },
 }
 
@@ -101,20 +101,20 @@ enum Expr<'a> {
     VariableAccess(&'a str),
     FunctionCall {
         left: &'a str,
-        arguments: Vec<Expr<'a>>,
+        arguments: Vec<Spanned<Expr<'a>>>,
     },
     ArrayAccess {
-        left: Box<Expr<'a>>,
+        left: Box<Spanned<Expr<'a>>>,
         right: ArrayIndex<'a>,
     },
     BinaryOp {
-        left: Box<Expr<'a>>,
-        op: BinaryOperator,
-        right: Box<Expr<'a>>,
+        left: Box<Spanned<Expr<'a>>>,
+        op: Spanned<BinaryOperator>,
+        right: Box<Spanned<Expr<'a>>>,
     },
     UnaryOp {
-        op: UnaryOperator,
-        expr: Box<Expr<'a>>,
+        op: Spanned<UnaryOperator>,
+        expr: Box<Spanned<Expr<'a>>>,
     },
 }
 
@@ -130,73 +130,76 @@ enum Statement<'a> {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct ProcedureDefinition<'a> {
-    name: &'a str,
-    parameters: Vec<&'a str>,
-    body: Vec<Statement<'a>>,
+pub struct ProcedureDefinition<'a> {
+    pub name: &'a str,
+    pub parameters: Vec<&'a str>,
+    pub body: Vec<Statement<'a>>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-struct AstRoot<'a> {
-    procedures: Vec<ProcedureDefinition<'a>>,
-    statements: Vec<Statement<'a>>,
+pub struct AstRoot<'a> {
+    pub procedures: Vec<ProcedureDefinition<'a>>,
+    pub statements: Vec<Statement<'a>>,
 }
 
-enum Mode {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub enum Mode {
     JumpyImp,
     StructuredImp,
+    #[default]
     ProceduralImp,
 }
 
-fn parse_pseudocode_program<
+pub fn parse_pseudocode_program<
     'src,
-    I: ValueInput<'src, Token = epic_token::Token<'src>, Span = SimpleSpan>,
->() -> impl chumsky::prelude::Parser<
-    'src,
-    I,
-    AstRoot<'src>,
-    chumsky::extra::Err<Rich<'src, epic_token::Token<'src>>>,
-> {
+    I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
+>(
+    mode: Mode,
+) -> impl chumsky::prelude::Parser<'src, I, AstRoot<'src>, chumsky::extra::Err<Rich<'src, Token<'src>>>>
+{
     let variable_access = select! { epic_token::Token::Identifier(ident) => ident }
-        .map(|ident| Expr::VariableAccess(ident));
+        .map(Expr::VariableAccess)
+        .spanned();
 
-    let boolean_literal = select! {
-        epic_token::Token::BoolLiteral(value) => Expr::BooleanLiteral(value)
-    };
+    let boolean_literal = select! { epic_token::Token::BoolLiteral(value) => value }
+        .map(Expr::BooleanLiteral)
+        .spanned();
 
-    let number_literal = select! {
-        epic_token::Token::NumberLiteral(value) => Expr::NumberLiteral(value.parse().unwrap())
-    };
+    let number_literal =
+        select! { epic_token::Token::NumberLiteral(value) => value.parse().unwrap() }
+            .map(Expr::NumberLiteral)
+            .spanned();
 
     let value = boolean_literal.or(number_literal).or(variable_access);
 
     let expr = recursive(|expr| {
-        let paren_expr = expr.clone().delimited_by(
-            just(epic_token::Token::LRoundBracket),
-            just(epic_token::Token::RRoundBracket),
-        );
+        let paren_expr = expr
+            .clone()
+            .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
+            .map(|Spanned { inner: e, span }| Spanned {
+                inner: e.inner,
+                span,
+            });
 
         let function_call = select! { epic_token::Token::Identifier(name) => name }
             .then(
                 expr.clone()
-                    .separated_by(just(epic_token::Token::Comma))
+                    .separated_by(just(Token::Comma))
                     .collect::<Vec<_>>()
-                    .delimited_by(
-                        just(epic_token::Token::LRoundBracket),
-                        just(epic_token::Token::RRoundBracket),
-                    ),
+                    .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket)),
             )
             .map(|(name, args)| Expr::FunctionCall {
                 left: name,
                 arguments: args,
-            });
+            })
+            .spanned();
 
         let atom = choice((paren_expr, function_call, value));
 
         let array_index = choice((
             expr.clone()
                 .or_not()
-                .then_ignore(just(epic_token::Token::Colon))
+                .then_ignore(just(Token::Colon))
                 .then(expr.clone().or_not())
                 .map(|(start, end)| ArrayIndex::Slice {
                     start: start.map(Box::new),
@@ -204,100 +207,113 @@ fn parse_pseudocode_program<
                 }),
             expr.clone().map(|e| ArrayIndex::SingleIndex(Box::new(e))),
         ))
-        .delimited_by(
-            just(epic_token::Token::LSquareBracket),
-            just(epic_token::Token::RSquareBracket),
-        );
+        .delimited_by(just(Token::LSquareBracket), just(Token::RSquareBracket));
 
         atom.pratt((
             infix(
                 left(0),
-                select! { epic_token::Token::Op(epic_token::Operator::Or) => {} },
-                |lhs, _, rhs, _| Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    op: BinaryOperator::Or,
-                    right: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Or) =>  {}}.spanned(),
+                |lhs, op, rhs, _| {
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        op: Spanned { inner: BinaryOperator::Or, span: op.span},
+                        right: Box::new(rhs),
+                    }
                 },
             ),
             infix(
                 left(1),
-                select! { epic_token::Token::Op(epic_token::Operator::And) => {} },
-                |lhs, _, rhs, _| Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    op: BinaryOperator::And,
-                    right: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::And) => {} }.spanned(),
+                |lhs, op, rhs, _| {
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        op: Spanned { inner: BinaryOperator::And, span: op.span},
+                        right: Box::new(rhs),
+                    }
                 },
             ),
             infix(
                 left(2),
-                select! { epic_token::Token::Op(op) if matches!(op, epic_token::Operator::Lt | epic_token::Operator::Gt | epic_token::Operator::Lte | epic_token::Operator::Gte | epic_token::Operator::Eq | epic_token::Operator::Neq) => op },
-                |lhs, op, rhs, _| {
+                select! { epic_token::Token::Op(op) if matches!(op, Operator::Lt | Operator::Gt | Operator::Lte | Operator::Gte | Operator::Eq | Operator::Neq) => op }.spanned(),
+                |lhs, op, rhs, extra| {
                     let bin_op = match op {
-                        epic_token::Operator::Lt => BinaryOperator::Lt,
-                        epic_token::Operator::Gt => BinaryOperator::Gt,
-                        epic_token::Operator::Lte => BinaryOperator::Lte,
-                        epic_token::Operator::Gte => BinaryOperator::Gte,
-                        epic_token::Operator::Eq => BinaryOperator::Eq,
-                        epic_token::Operator::Neq => BinaryOperator::Neq,
+                        Operator::Lt => BinaryOperator::Lt,
+                        Operator::Gt => BinaryOperator::Gt,
+                        Operator::Lte => BinaryOperator::Lte,
+                        Operator::Gte => BinaryOperator::Gte,
+                        Operator::Eq => BinaryOperator::Eq,
+                        Operator::Neq => BinaryOperator::Neq,
                         _ => unreachable!(),
                     };
                     Expr::BinaryOp {
                         left: Box::new(lhs),
-                        op: bin_op,
+                        op: Spanned { inner: bin_op, span: op.span },
                         right: Box::new(rhs),
                     }
                 },
             ),
             infix(
                 left(3),
-                select! { epic_token::Token::Op(epic_token::Operator::Add) => {} },
-                |lhs, _, rhs, _| Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    op: BinaryOperator::Add,
-                    right: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Add) => {} }.spanned(),
+                |lhs, op, rhs, _| {
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        op: Spanned { inner: BinaryOperator::Add, span: op.span },
+                        right: Box::new(rhs),
+                    }
                 },
             ),
             infix(
                 left(3),
-                select! { epic_token::Token::Op(epic_token::Operator::Subtract) => {} },
-                |lhs, _, rhs, _| Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    op: BinaryOperator::Sub,
-                    right: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Subtract) => {} }.spanned(),
+                |lhs, op, rhs, _| {
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        op: Spanned { inner: BinaryOperator::Sub, span: op.span },
+                        right: Box::new(rhs),
+                    }
                 },
             ),
             infix(
                 left(4),
-                select! { epic_token::Token::Op(epic_token::Operator::Multiply) => {} },
-                |lhs, _, rhs, _| Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    op: BinaryOperator::Mul,
-                    right: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Multiply) => {} }.spanned(),
+                |lhs, op, rhs, _| {
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        op: Spanned { inner: BinaryOperator::Mul, span: op.span },
+                        right: Box::new(rhs),
+                    }
                 },
             ),
             infix(
                 left(4),
-                select! { epic_token::Token::Op(epic_token::Operator::Divide) => {} },
-                |lhs, _, rhs, _| Expr::BinaryOp {
-                    left: Box::new(lhs),
-                    op: BinaryOperator::Div,
-                    right: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Divide) => {} }.spanned(),
+                |lhs, op, rhs, _| {
+                    Expr::BinaryOp {
+                        left: Box::new(lhs),
+                        op: Spanned { inner: BinaryOperator::Div, span: op.span },
+                        right: Box::new(rhs),
+                    }
                 },
             ),
             prefix(
                 5,
-                select! { epic_token::Token::Op(epic_token::Operator::Subtract) => {} },
-                |_, rhs, _| Expr::UnaryOp {
-                    op: UnaryOperator::Neg,
-                    expr: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Subtract) => {} }.spanned(),
+                |op, rhs, _| {
+                    Expr::UnaryOp {
+                        op: Spanned { inner: UnaryOperator::Neg, span: op.span },
+                        expr: Box::new(rhs),
+                    }
                 },
             ),
             prefix(
                 5,
-                select! { epic_token::Token::Op(epic_token::Operator::Not) => {} },
-                |_, rhs, _| Expr::UnaryOp {
-                    op: UnaryOperator::Not,
-                    expr: Box::new(rhs),
+                select! { epic_token::Token::Op(Operator::Not) => {} }.spanned(),
+                |op, rhs, _| {
+                    Expr::UnaryOp {
+                        op: Spanned { inner: UnaryOperator::Not, span: op.span },
+                        expr: Box::new(rhs),
+                    }
                 },
             ),
             postfix(
@@ -310,29 +326,26 @@ fn parse_pseudocode_program<
                     }
                 },
             ),
-        ))
+        )).spanned()
     });
 
     let statement = recursive(|statement| {
         let block = statement.repeated().collect::<Vec<_>>();
 
-        let indented_block = block.delimited_by(
-            just(epic_token::Token::Indent),
-            just(epic_token::Token::Dedent),
-        );
+        let indented_block = block.delimited_by(just(Token::Indent), just(Token::Dedent));
 
         let goto_statement = select! {
             epic_token::Token::NumberLiteral(line_num) => Statement::from(GotoStatement { line_number: line_num.parse().unwrap() })
         }
             .delimited_by(
-                just([epic_token::Token::Goto, epic_token::Token::Line]),
-                just(epic_token::Token::Newline)
+                just([Token::Goto, Token::Line]),
+                just(Token::Newline)
             );
 
         let assignment_statement = select! { epic_token::Token::Identifier(ident) => ident }
-            .then_ignore(select! {epic_token::Token::Op(epic_token::Operator::Assign) => {}})
+            .then_ignore(select! {epic_token::Token::Op(Operator::Assign) => {}})
             .then(expr.clone())
-            .then_ignore(just(epic_token::Token::Newline))
+            .then_ignore(just(Token::Newline))
             .map(|(identifier, expression)| {
                 Statement::from(AssignmentStatement {
                     identifier,
@@ -341,21 +354,18 @@ fn parse_pseudocode_program<
             });
 
         let swap_statement = select! { epic_token::Token::Identifier(ident) => ident }
-            .then_ignore(select! {epic_token::Token::Op(epic_token::Operator::Swap) => {} })
+            .then_ignore(select! {epic_token::Token::Op(Operator::Swap) => {} })
             .then(select! { epic_token::Token::Identifier(ident) => ident })
-            .then_ignore(just(epic_token::Token::Newline))
+            .then_ignore(just(Token::Newline))
             .map(|(ident_1, ident_2)| Statement::from(SwapStatement { ident_1, ident_2 }));
 
         let if_statement = expr
             .clone()
-            .delimited_by(
-                just(epic_token::Token::If),
-                just([epic_token::Token::Then, epic_token::Token::Newline]),
-            )
+            .delimited_by(just(Token::If), just([Token::Then, Token::Newline]))
             .then(indented_block.clone())
             .then(
-                just(epic_token::Token::Else)
-                    .ignore_then(just(epic_token::Token::Newline))
+                just(Token::Else)
+                    .ignore_then(just(Token::Newline))
                     .ignore_then(indented_block.clone())
                     .or_not(),
             )
@@ -369,20 +379,17 @@ fn parse_pseudocode_program<
 
         let while_statement = expr
             .clone()
-            .delimited_by(
-                just(epic_token::Token::While),
-                just([epic_token::Token::Do, epic_token::Token::Newline]),
-            )
+            .delimited_by(just(Token::While), just([Token::Do, Token::Newline]))
             .then(indented_block.clone())
             .map(|(condition, body)| Statement::from(WhileStatement { condition, body }));
 
-        let for_statement = just(epic_token::Token::For)
+        let for_statement = just(Token::For)
             .ignore_then(select! { epic_token::Token::Identifier(loop_var) => loop_var })
-            .then_ignore(select! { epic_token::Token::Op(epic_token::Operator::Assign) => {} })
+            .then_ignore(select! { epic_token::Token::Op(Operator::Assign) => {} })
             .then(expr.clone())
-            .then_ignore(just(epic_token::Token::To))
+            .then_ignore(just(Token::To))
             .then(expr.clone())
-            .then_ignore(just([epic_token::Token::Do, epic_token::Token::Newline]))
+            .then_ignore(just([Token::Do, Token::Newline]))
             .then(indented_block.clone())
             .map(|(((loop_variable, start_expr), end_expr), body)| {
                 Statement::from(ForStatement {
@@ -395,10 +402,7 @@ fn parse_pseudocode_program<
 
         let return_statement = expr
             .or_not()
-            .delimited_by(
-                just(epic_token::Token::Return),
-                just(epic_token::Token::Newline),
-            )
+            .delimited_by(just(Token::Return), just(Token::Newline))
             .map(|expr_opt| Statement::from(ReturnStatement { expr: expr_opt }));
 
         choice((
@@ -413,25 +417,21 @@ fn parse_pseudocode_program<
     });
 
     let block = statement.repeated().collect::<Vec<_>>();
-    let indented_block = block.clone().delimited_by(
-        just(epic_token::Token::Indent),
-        just(epic_token::Token::Dedent),
-    );
+    let indented_block = block
+        .clone()
+        .delimited_by(just(Token::Indent), just(Token::Dedent));
 
-    let procedure = just(epic_token::Token::Procedure)
+    let procedure = just(Token::Procedure)
         .ignore_then(select! { epic_token::Token::Identifier(name) => name })
         .then(
             select! { epic_token::Token::Identifier(param) => param }
-                .separated_by(just(epic_token::Token::Comma))
+                .separated_by(just(Token::Comma))
                 .collect::<Vec<_>>()
                 .or_not()
-                .delimited_by(
-                    just(epic_token::Token::LRoundBracket),
-                    just(epic_token::Token::RRoundBracket),
-                )
+                .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
                 .map(|params| params.unwrap_or_default()),
         )
-        .then_ignore(just([epic_token::Token::Colon, epic_token::Token::Newline]))
+        .then_ignore(just([Token::Colon, Token::Newline]))
         .then(indented_block.clone())
         .map(|((name, parameters), body)| ProcedureDefinition {
             name,
@@ -489,7 +489,7 @@ Procedure SyntaxTest(a, b):
             |(token, span): (Token, SourceSpan)| (token, (span.start.bytes..span.end.bytes).into()),
         );
 
-        let parser = parse_pseudocode_program();
+        let parser = parse_pseudocode_program(Mode::default());
         let result = parser.parse(token_stream);
 
         println!("{:#?}", result);
