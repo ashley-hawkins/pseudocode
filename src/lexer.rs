@@ -5,7 +5,7 @@ use logos::{
     Logos,
 };
 
-use crate::epic_token;
+use crate::token::{self, Token, source_byte_range_to_source_span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IndentationCharacter {
@@ -77,7 +77,7 @@ pub struct NewlineMetadata {
 #[logos(subpattern block_comment = r"/\*([^*]|\*+[^*/])*\*+/")]
 #[logos(subpattern line_comment = r"//[^\n]*")]
 #[logos(skip(r"(?&block_comment)|(?&line_comment)", priority = 0))]
-pub enum Token<'a> {
+enum LexerToken<'a> {
     // Single-character tokens
     #[token("(")]
     RoundL,
@@ -180,7 +180,7 @@ pub enum Token<'a> {
 }
 
 fn handle_whitespace<'src>(
-    lex: &mut logos::Lexer<'src, Token<'src>>,
+    lex: &mut logos::Lexer<'src, LexerToken<'src>>,
 ) -> FilterResult<NewlineMetadata, LexerError> {
     let span = lex.span();
     let slice = lex.slice();
@@ -297,19 +297,14 @@ fn handle_whitespace<'src>(
 
 pub fn lex_str<'src>(
     source: &'src str,
-) -> impl Iterator<
-    Item = (
-        Result<epic_token::Token, LexerError>,
-        epic_token::SourceSpan,
-    ),
-> {
-    let mut lexer = Token::lexer_with_extras(source, LexerState::default());
+) -> impl Iterator<Item = (Result<token::Token<'src>, LexerError>, token::SourceSpan)> {
+    let mut lexer = LexerToken::lexer_with_extras(source, LexerState::default());
 
     std::iter::from_fn({
         let mut once_flag = true;
         let mut failed = false;
-        let mut queue: VecDeque<(epic_token::Token, epic_token::SourceSpan)> = VecDeque::new();
-        move || -> Option<(Result<epic_token::Token, LexerError>, epic_token::SourceSpan)> {
+        let mut queue: VecDeque<(token::Token, token::SourceSpan)> = VecDeque::new();
+        move || -> Option<(Result<token::Token, LexerError>, token::SourceSpan)> {
             if failed {
                 return None;
             }
@@ -324,7 +319,7 @@ pub fn lex_str<'src>(
                 once_flag = false;
                 if matches!(
                     res,
-                    Ok(Token::Newline(NewlineMetadata {
+                    Ok(LexerToken::Newline(NewlineMetadata {
                         indentation_change: None,
                         ..
                     }))
@@ -333,30 +328,125 @@ pub fn lex_str<'src>(
                 }
             }
 
-            let res = epic_token::into_fat_tokens(
-                        res,
-                        lexer.span(),
-                        &lexer.extras.line_offsets,
-                    );
+            let res = into_final_tokens(res, lexer.span());
 
             match res {
                 Err((e, span)) => {
                     failed = true;
-                    Some((Err(e), span))
+                    Some((
+                        Err(e),
+                        source_byte_range_to_source_span(span, &lexer.extras.line_offsets),
+                    ))
                 }
                 Ok(((main_token, main_token_span), additional_tokens)) => {
-                    queue.extend(additional_tokens);
+                    queue.extend(additional_tokens.into_iter().map(|(t, s)| {
+                        (
+                            t,
+                            source_byte_range_to_source_span(s, &lexer.extras.line_offsets),
+                        )
+                    }));
 
-                    Some((Ok(main_token), main_token_span))
+                    Some((
+                        Ok(main_token),
+                        source_byte_range_to_source_span(
+                            main_token_span,
+                            &lexer.extras.line_offsets,
+                        ),
+                    ))
                 }
             }
         }
     })
 }
 
+#[allow(clippy::type_complexity)]
+fn into_final_tokens<'src>(
+    source_token: Result<LexerToken<'src>, LexerError>,
+    source_location: Range<usize>,
+) -> Result<
+    (
+        (Token<'src>, Range<usize>),
+        Vec<(Token<'src>, Range<usize>)>,
+    ),
+    (LexerError, Range<usize>),
+> {
+    match source_token {
+        Err(e) => Err((e, source_location)),
+        Ok(source_token) => Ok((
+            (
+                match source_token {
+                    LexerToken::RoundL => Token::LRoundBracket,
+                    LexerToken::RoundR => Token::RRoundBracket,
+                    LexerToken::SquareL => Token::LSquareBracket,
+                    LexerToken::SquareR => Token::RSquareBracket,
+                    LexerToken::Colon => Token::Colon,
+                    LexerToken::Comma => Token::Comma,
+                    LexerToken::Assign => Token::Assign,
+                    LexerToken::Swap => Token::Swap,
+                    LexerToken::Lt => Token::Lt,
+                    LexerToken::Gt => Token::Gt,
+                    LexerToken::Lte => Token::Lte,
+                    LexerToken::Gte => Token::Gte,
+                    LexerToken::Eq => Token::Eq,
+                    LexerToken::Neq => Token::Neq,
+                    LexerToken::Add => Token::Add,
+                    LexerToken::Subtract => Token::Subtract,
+                    LexerToken::Multiply => Token::Multiply,
+                    LexerToken::Divide => Token::Divide,
+                    LexerToken::And => Token::And,
+                    LexerToken::Or => Token::Or,
+                    LexerToken::Not => Token::Not,
+                    LexerToken::Assert => Token::Assert,
+                    LexerToken::Is => Token::Is,
+                    LexerToken::In => Token::In,
+                    LexerToken::Strictly => Token::Strictly,
+                    LexerToken::Ascending => Token::Ascending,
+                    LexerToken::Descending => Token::Descending,
+                    LexerToken::Procedure => Token::Procedure,
+                    LexerToken::For => Token::For,
+                    LexerToken::To => Token::To,
+                    LexerToken::Do => Token::Do,
+                    LexerToken::While => Token::While,
+                    LexerToken::If => Token::If,
+                    LexerToken::Then => Token::Then,
+                    LexerToken::Else => Token::Else,
+                    LexerToken::Goto => Token::Goto,
+                    LexerToken::Line => Token::Line,
+                    LexerToken::Return => Token::Return,
+                    LexerToken::BoolTrue => Token::BoolLiteral(true),
+                    LexerToken::BoolFalse => Token::BoolLiteral(false),
+                    LexerToken::NumberLiteral(n) => Token::NumberLiteral(n),
+                    LexerToken::Identifier(s) => Token::Identifier(s),
+                    LexerToken::Newline(newline_metadata) => {
+                        let NewlineMetadata {
+                            indentation_change,
+                            newline_range,
+                        } = newline_metadata;
+
+                        let additional_tokens = match indentation_change {
+                            Some(IndentationChange::Indent) => {
+                                vec![(Token::Indent, newline_range.end..source_location.end)]
+                            }
+                            Some(IndentationChange::Dedent(amount)) => (0..amount)
+                                .map(|_| (Token::Dedent, newline_range.end..source_location.end))
+                                .collect(),
+                            None => vec![],
+                        };
+
+                        return Ok(((Token::Newline, newline_range), additional_tokens));
+                    }
+                    LexerToken::UnexpectedCharacter => Token::UnexpectedCharacter,
+                },
+                source_location,
+            ),
+            Vec::new(),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::epic_token::{OneIndexed, ZeroIndexed};
+    use crate::token::{OneIndexed, ZeroIndexed};
 
     use super::*;
     #[test]
@@ -382,11 +472,10 @@ else
         assert_eq!(
             tokens[0],
             (
-                epic_token::Token::Identifier("currentVal"),
-                epic_token::SourceSpan {
-                    start: epic_token::SourceLocation::<OneIndexed>::new(77, 3, 1)
-                        .to_zero_indexed(),
-                    end: epic_token::SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
+                token::Token::Identifier("currentVal"),
+                token::SourceSpan {
+                    start: token::SourceLocation::<OneIndexed>::new(77, 3, 1).to_zero_indexed(),
+                    end: token::SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
                 }
             )
         );

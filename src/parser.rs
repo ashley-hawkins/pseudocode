@@ -5,7 +5,7 @@ use chumsky::{
     span::Spanned,
 };
 
-use crate::epic_token::{self, Token};
+use crate::token::{self, Token};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct GotoStatement {
@@ -179,13 +179,13 @@ pub fn parse_pseudocode_program<
 ) -> impl chumsky::prelude::Parser<'src, I, AstRoot<'src>, chumsky::extra::Err<Rich<'src, Token<'src>>>>
 {
     let variable_access =
-        select! { epic_token::Token::Identifier(ident) => ident }.map(Expr::VariableAccess);
+        select! { token::Token::Identifier(ident) => ident }.map(Expr::VariableAccess);
 
     let boolean_literal =
-        select! { epic_token::Token::BoolLiteral(value) => value }.map(Expr::BooleanLiteral);
+        select! { token::Token::BoolLiteral(value) => value }.map(Expr::BooleanLiteral);
 
     let number_literal =
-        select! { epic_token::Token::NumberLiteral(value) => value.parse().unwrap() }
+        select! { token::Token::NumberLiteral(value) => value.parse().unwrap() }
             .map(Expr::NumberLiteral);
 
     let value = choice((boolean_literal, number_literal, variable_access));
@@ -196,7 +196,7 @@ pub fn parse_pseudocode_program<
             .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
             .map(|span: Spanned<Expr>| span.inner);
 
-        let function_call = select! { epic_token::Token::Identifier(name) => name }
+        let function_call = select! { token::Token::Identifier(name) => name }
             .spanned()
             .then(
                 expr.clone()
@@ -335,15 +335,15 @@ pub fn parse_pseudocode_program<
         let indented_block = block.delimited_by(just(Token::Indent), just(Token::Dedent));
 
         let goto_statement = select! {
-            epic_token::Token::NumberLiteral(line_num) =>  line_num.parse().unwrap()
+            token::Token::NumberLiteral(line_num) =>  line_num.parse().unwrap()
         }
         .spanned()
         .map(|line_number| Statement::from(GotoStatement { line_number }))
         .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
 
-        let assignment_statement = select! { epic_token::Token::Identifier(ident) => ident }
+        let assignment_statement = select! { token::Token::Identifier(ident) => ident }
             .spanned()
-            .then_ignore(just(epic_token::Token::Assign))
+            .then_ignore(just(token::Token::Assign))
             .then(expr.clone())
             .then_ignore(just(Token::Newline))
             .map(|(identifier, expression)| {
@@ -353,10 +353,10 @@ pub fn parse_pseudocode_program<
                 })
             });
 
-        let swap_statement = select! { epic_token::Token::Identifier(ident) => ident }
+        let swap_statement = select! { token::Token::Identifier(ident) => ident }
             .spanned()
-            .then_ignore(just(epic_token::Token::Swap))
-            .then(select! { epic_token::Token::Identifier(ident) => ident }.spanned())
+            .then_ignore(just(token::Token::Swap))
+            .then(select! { token::Token::Identifier(ident) => ident }.spanned())
             .then_ignore(just(Token::Newline))
             .map(|(ident_1, ident_2)| Statement::from(SwapStatement { ident_1, ident_2 }));
 
@@ -385,8 +385,8 @@ pub fn parse_pseudocode_program<
             .map(|(condition, body)| Statement::from(WhileStatement { condition, body }));
 
         let for_statement = just(Token::For)
-            .ignore_then(select! { epic_token::Token::Identifier(loop_var) => loop_var })
-            .then_ignore(just(epic_token::Token::Assign))
+            .ignore_then(select! { token::Token::Identifier(loop_var) => loop_var })
+            .then_ignore(just(token::Token::Assign))
             .then(expr.clone())
             .then_ignore(just(Token::To))
             .then(expr.clone())
@@ -427,9 +427,9 @@ pub fn parse_pseudocode_program<
         .delimited_by(just(Token::Indent), just(Token::Dedent));
 
     let procedure = just(Token::Procedure)
-        .ignore_then(select! { epic_token::Token::Identifier(name) => name }.spanned())
+        .ignore_then(select! { token::Token::Identifier(name) => name }.spanned())
         .then(
-            select! { epic_token::Token::Identifier(param) => param }
+            select! { token::Token::Identifier(param) => param }
                 .spanned()
                 .separated_by(just(Token::Comma))
                 .collect::<Vec<_>>()
@@ -460,7 +460,7 @@ pub fn parse_pseudocode_program<
 mod tests {
     use chumsky::input::Stream;
 
-    use crate::epic_token::{SourceSpan, Token};
+    use crate::token::{SourceSpan, Token};
 
     use super::*;
     #[test]
