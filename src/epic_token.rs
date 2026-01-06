@@ -3,29 +3,6 @@ use std::ops::Range;
 use crate::lexer::{self, IndentationChange, LexerError, NewlineMetadata};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Operator {
-    // Comparison
-    Lt,
-    Lte,
-    Gt,
-    Gte,
-    Eq,
-    Neq,
-    // Arithmetic
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    // Logic
-    And,
-    Or,
-    Not,
-    // Misc
-    Assign,
-    Swap,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BracketKind {
     Round,
     Square,
@@ -41,7 +18,28 @@ pub enum BracketDirection {
 pub enum Token<'src> {
     Error(LexerError),
     Identifier(&'src str),
-    Op(Operator),
+
+    // Operators
+
+    //   Comparison
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    Eq,
+    Neq,
+    //   Arithmetic
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    //   Logic
+    And,
+    Or,
+    Not,
+    //   Misc
+    Assign,
+    Swap,
 
     LRoundBracket,
     RRoundBracket,
@@ -55,7 +53,7 @@ pub enum Token<'src> {
     // Literals
     NumberLiteral(&'src str),
     BoolLiteral(bool),
-    
+
     Procedure,
     If,
     Then,
@@ -202,21 +200,21 @@ pub fn into_fat_tokens<'src>(
                     lexer::Token::SquareR => Token::RSquareBracket,
                     lexer::Token::Colon => Token::Colon,
                     lexer::Token::Comma => Token::Comma,
-                    lexer::Token::Assign => Token::Op(Operator::Assign),
-                    lexer::Token::Swap => Token::Op(Operator::Swap),
-                    lexer::Token::Lt => Token::Op(Operator::Lt),
-                    lexer::Token::Gt => Token::Op(Operator::Gt),
-                    lexer::Token::Lte => Token::Op(Operator::Lte),
-                    lexer::Token::Gte => Token::Op(Operator::Gte),
-                    lexer::Token::Eq => Token::Op(Operator::Eq),
-                    lexer::Token::Neq => Token::Op(Operator::Neq),
-                    lexer::Token::Add => Token::Op(Operator::Add),
-                    lexer::Token::Subtract => Token::Op(Operator::Subtract),
-                    lexer::Token::Multiply => Token::Op(Operator::Multiply),
-                    lexer::Token::Divide => Token::Op(Operator::Divide),
-                    lexer::Token::And => Token::Op(Operator::And),
-                    lexer::Token::Or => Token::Op(Operator::Or),
-                    lexer::Token::Not => Token::Op(Operator::Not),
+                    lexer::Token::Assign => Token::Assign,
+                    lexer::Token::Swap => Token::Swap,
+                    lexer::Token::Lt => Token::Lt,
+                    lexer::Token::Gt => Token::Gt,
+                    lexer::Token::Lte => Token::Lte,
+                    lexer::Token::Gte => Token::Gte,
+                    lexer::Token::Eq => Token::Eq,
+                    lexer::Token::Neq => Token::Neq,
+                    lexer::Token::Add => Token::Add,
+                    lexer::Token::Subtract => Token::Subtract,
+                    lexer::Token::Multiply => Token::Multiply,
+                    lexer::Token::Divide => Token::Divide,
+                    lexer::Token::And => Token::And,
+                    lexer::Token::Or => Token::Or,
+                    lexer::Token::Not => Token::Not,
                     lexer::Token::Assert => Token::Assert,
                     lexer::Token::Is => Token::Is,
                     lexer::Token::In => Token::In,

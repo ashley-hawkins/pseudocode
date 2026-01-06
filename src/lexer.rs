@@ -221,9 +221,12 @@ fn handle_whitespace<'src>(
                 //     first_char, 0, indentation_slice
                 // );
 
-                return Error(TokenValidationError::NonIndentCharacterInIndentation(
-                    (span.start + last_newline + 1)..(span.start + last_newline + 2),
-                ).into());
+                return Error(
+                    TokenValidationError::NonIndentCharacterInIndentation(
+                        (span.start + last_newline + 1)..(span.start + last_newline + 2),
+                    )
+                    .into(),
+                );
             }
         };
     }
@@ -233,18 +236,26 @@ fn handle_whitespace<'src>(
             (' ', Some(IndentationCharacter::Space)) => {}
             ('\t', Some(IndentationCharacter::Tab)) => {}
             (' ', Some(IndentationCharacter::Tab)) | ('\t', Some(IndentationCharacter::Space)) => {
-                return Error(TokenValidationError::InconsistentIndentation(
-                    (span.start + last_newline + 1 + idx)..(span.start + last_newline + 2 + idx),
-                ).into());
+                return Error(
+                    TokenValidationError::InconsistentIndentation(
+                        (span.start + last_newline + 1 + idx)
+                            ..(span.start + last_newline + 2 + idx),
+                    )
+                    .into(),
+                );
             }
             _ => {
                 // println!(
                 //     "Non-indent character in indentation: {} found at index: {} in indentation span {:?}",
                 //     ch, idx, indentation_slice
                 // );
-                return Error(TokenValidationError::NonIndentCharacterInIndentation(
-                    (span.start + last_newline + 1 + idx)..(span.start + last_newline + 2 + idx),
-                ).into());
+                return Error(
+                    TokenValidationError::NonIndentCharacterInIndentation(
+                        (span.start + last_newline + 1 + idx)
+                            ..(span.start + last_newline + 2 + idx),
+                    )
+                    .into(),
+                );
             }
         }
     }
@@ -263,9 +274,7 @@ fn handle_whitespace<'src>(
                 }
             }
             if state.indent_stack.last().copied().unwrap_or(0) != indentation_len {
-                return Error(TokenValidationError::UnexpectedDedent(
-                    newline_range,
-                ).into());
+                return Error(TokenValidationError::UnexpectedDedent(newline_range).into());
             }
             Emit(NewlineMetadata {
                 indentation_change: Some(IndentationChange::Dedent(dedent_count)),
@@ -286,7 +295,14 @@ fn handle_whitespace<'src>(
     }
 }
 
-pub fn lex_str<'src>(source: &'src str) -> impl Iterator<Item = (Result<epic_token::Token, LexerError>, epic_token::SourceSpan)> {
+pub fn lex_str<'src>(
+    source: &'src str,
+) -> impl Iterator<
+    Item = (
+        Result<epic_token::Token, LexerError>,
+        epic_token::SourceSpan,
+    ),
+> {
     let mut lexer = Token::lexer_with_extras(source, LexerState::default());
 
     std::iter::from_fn({
@@ -316,7 +332,7 @@ pub fn lex_str<'src>(source: &'src str) -> impl Iterator<Item = (Result<epic_tok
                     res = lexer.next()?;
                 }
             }
-            
+
             let res = epic_token::into_fat_tokens(
                         res,
                         lexer.span(),
@@ -329,7 +345,6 @@ pub fn lex_str<'src>(source: &'src str) -> impl Iterator<Item = (Result<epic_tok
                     Some((Err(e), span))
                 }
                 Ok(((main_token, main_token_span), additional_tokens)) => {
-                    
                     queue.extend(additional_tokens);
 
                     Some((Ok(main_token), main_token_span))
@@ -369,7 +384,8 @@ else
             (
                 epic_token::Token::Identifier("currentVal"),
                 epic_token::SourceSpan {
-                    start: epic_token::SourceLocation::<OneIndexed>::new(77, 3, 1).to_zero_indexed(),
+                    start: epic_token::SourceLocation::<OneIndexed>::new(77, 3, 1)
+                        .to_zero_indexed(),
                     end: epic_token::SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
                 }
             )
