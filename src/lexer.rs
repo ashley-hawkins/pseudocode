@@ -5,7 +5,7 @@ use logos::{
     Logos,
 };
 
-use crate::epic_token::{self, FatToken};
+use crate::epic_token;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IndentationCharacter {
@@ -26,19 +26,23 @@ pub enum IndentationChange {
     Dedent(usize),
 }
 
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+enum TokenValidationError {
+    #[error("There is a non-indent character in the indentation portion of an indented line.")]
+    NonIndentCharacterInIndentation(Range<usize>),
+    #[error("Inconsistent use of indentation characters.")]
+    InconsistentIndentation(Range<usize>),
+    #[error("Unexpected dedent, does not match any previous indent level.")]
+    UnexpectedDedent(Range<usize>),
+}
+
 #[derive(thiserror::Error, Debug, PartialEq, Eq, Clone, Default)]
 pub enum LexerError {
     #[error("Unknown lexer error")]
     #[default]
     Unknown,
-    #[error("There is a non-indent character in the indentation portion of an indented line.")]
-    NonIndentCharacterInIndentation,
-    #[error("Inconsistent use of indentation characters.")]
-    InconsistentIndentation,
-    #[error("Unexpected dedent, does not match any previous indent level.")]
-    UnexpectedDedent,
-    #[error(transparent)]
-    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("Logical error in token: ")]
+    TokenValidationError(#[from] TokenValidationError),
 }
 
 #[derive(Debug)]
@@ -73,7 +77,8 @@ pub struct NewlineMetadata {
 #[logos(subpattern block_comment = r"/\*([^*]|\*+[^*/])*\*+/")]
 #[logos(subpattern line_comment = r"//[^\n]*")]
 #[logos(skip(r"(?&block_comment)|(?&line_comment)", priority = 0))]
-pub enum Token {
+pub enum Token<'a> {
+    // Single-character tokens
     #[token("(")]
     RoundL,
     #[token(")")]
@@ -131,8 +136,14 @@ pub enum Token {
     #[token("descending")]
     Descending,
     //   Control flow
+    #[regex("[Pp]rocedure")]
+    Procedure,
     #[token("for")]
     For,
+    #[token("to")]
+    To,
+    #[token("do")]
+    Do,
     #[token("while")]
     While,
     #[token("if")]
@@ -153,19 +164,24 @@ pub enum Token {
     #[token("false")]
     BoolFalse,
     // More complex tokens
-    #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse())]
-    NumberLiteral(f64),
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
-    Identifier(String),
+    #[regex(r"[0-9]+(\.[0-9]+)?")]
+    NumberLiteral(&'a str),
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
+    Identifier(&'a str),
     // Matches newlines and following indentation. Can also match indentation without a preceding newline at the start of the file.
     #[regex(
         r"((?&single_whitespace)|(?&block_comment)|(?&line_comment))+",
         handle_whitespace
     )]
     Newline(NewlineMetadata),
+
+    #[regex(".", priority = 0)]
+    UnexpectedCharacter,
 }
 
-fn handle_whitespace(lex: &mut logos::Lexer<Token>) -> FilterResult<NewlineMetadata, LexerError> {
+fn handle_whitespace<'src>(
+    lex: &mut logos::Lexer<'src, Token<'src>>,
+) -> FilterResult<NewlineMetadata, LexerError> {
     let span = lex.span();
     let slice = lex.slice();
     // println!("Handling whitespace: {:?}", slice);
@@ -205,7 +221,9 @@ fn handle_whitespace(lex: &mut logos::Lexer<Token>) -> FilterResult<NewlineMetad
                 //     first_char, 0, indentation_slice
                 // );
 
-                return Error(LexerError::NonIndentCharacterInIndentation);
+                return Error(TokenValidationError::NonIndentCharacterInIndentation(
+                    (span.start + last_newline + 1)..(span.start + last_newline + 2),
+                ).into());
             }
         };
     }
@@ -215,14 +233,18 @@ fn handle_whitespace(lex: &mut logos::Lexer<Token>) -> FilterResult<NewlineMetad
             (' ', Some(IndentationCharacter::Space)) => {}
             ('\t', Some(IndentationCharacter::Tab)) => {}
             (' ', Some(IndentationCharacter::Tab)) | ('\t', Some(IndentationCharacter::Space)) => {
-                return Error(LexerError::InconsistentIndentation);
+                return Error(TokenValidationError::InconsistentIndentation(
+                    (span.start + last_newline + 1 + idx)..(span.start + last_newline + 2 + idx),
+                ).into());
             }
             _ => {
                 // println!(
                 //     "Non-indent character in indentation: {} found at index: {} in indentation span {:?}",
                 //     ch, idx, indentation_slice
                 // );
-                return Error(LexerError::NonIndentCharacterInIndentation);
+                return Error(TokenValidationError::NonIndentCharacterInIndentation(
+                    (span.start + last_newline + 1 + idx)..(span.start + last_newline + 2 + idx),
+                ).into());
             }
         }
     }
@@ -241,7 +263,9 @@ fn handle_whitespace(lex: &mut logos::Lexer<Token>) -> FilterResult<NewlineMetad
                 }
             }
             if state.indent_stack.last().copied().unwrap_or(0) != indentation_len {
-                return Error(LexerError::UnexpectedDedent);
+                return Error(TokenValidationError::UnexpectedDedent(
+                    newline_range,
+                ).into());
             }
             Emit(NewlineMetadata {
                 indentation_change: Some(IndentationChange::Dedent(dedent_count)),
@@ -262,20 +286,20 @@ fn handle_whitespace(lex: &mut logos::Lexer<Token>) -> FilterResult<NewlineMetad
     }
 }
 
-pub fn lex_str(source: &str) -> impl Iterator<Item = Result<FatToken, LexerError>> {
+pub fn lex_str<'src>(source: &'src str) -> impl Iterator<Item = (Result<epic_token::Token, LexerError>, epic_token::SourceSpan)> {
     let mut lexer = Token::lexer_with_extras(source, LexerState::default());
 
     std::iter::from_fn({
         let mut once_flag = true;
         let mut failed = false;
-        let mut queue: VecDeque<FatToken> = VecDeque::new();
-        move || {
+        let mut queue: VecDeque<(epic_token::Token, epic_token::SourceSpan)> = VecDeque::new();
+        move || -> Option<(Result<epic_token::Token, LexerError>, epic_token::SourceSpan)> {
             if failed {
                 return None;
             }
 
-            if let Some(token) = queue.pop_front() {
-                return Some(Ok(token));
+            if let Some((token, span)) = queue.pop_front() {
+                return Some((Ok(token), span));
             }
 
             let mut res = lexer.next()?;
@@ -292,21 +316,23 @@ pub fn lex_str(source: &str) -> impl Iterator<Item = Result<FatToken, LexerError
                     res = lexer.next()?;
                 }
             }
-
-            match res {
-                Err(e) => {
-                    failed = true;
-                    Some(Err(e))
-                }
-                Ok(token) => {
-                    let (main_token, additional_tokens) = epic_token::into_fat_tokens(
-                        token,
+            
+            let res = epic_token::into_fat_tokens(
+                        res,
                         lexer.span(),
                         &lexer.extras.line_offsets,
                     );
+
+            match res {
+                Err((e, span)) => {
+                    failed = true;
+                    Some((Err(e), span))
+                }
+                Ok(((main_token, main_token_span), additional_tokens)) => {
+                    
                     queue.extend(additional_tokens);
 
-                    Some(Ok(main_token))
+                    Some((Ok(main_token), main_token_span))
                 }
             }
         }
@@ -333,20 +359,20 @@ else
         goto line 4"#;
 
         let tokens: Vec<_> = lex_str(source)
-            .map(|res| res.expect("Lexer error"))
+            .map(|(res, span)| (res.expect("Lexer error"), span))
             .collect();
 
         // eprintln!("{:#?}", &tokens[..3]);
 
         assert_eq!(
             tokens[0],
-            epic_token::FatToken {
-                token: epic_token::Token::Identifier("currentVal".to_string()),
-                span: epic_token::SourceSpan {
-                    start: epic_token::SourceLocation::<OneIndexed>::new(3, 1).to_zero_indexed(),
-                    end: epic_token::SourceLocation::<OneIndexed>::new(3, 11).to_zero_indexed(),
-                },
-            }
+            (
+                epic_token::Token::Identifier("currentVal"),
+                epic_token::SourceSpan {
+                    start: epic_token::SourceLocation::<OneIndexed>::new(77, 3, 1).to_zero_indexed(),
+                    end: epic_token::SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
+                }
+            )
         );
     }
 }
