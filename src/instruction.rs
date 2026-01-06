@@ -1,4 +1,4 @@
-use chumsky::span::SimpleSpan;
+use crate::util::SourceSpan;
 
 enum BinaryOperation {
     Add,
@@ -50,8 +50,8 @@ enum Instruction<Target> {
     PopIntoEnvironment(String),
     Binary {
         op: BinaryOperation,
-        lhs_span: SimpleSpan,
-        rhs_span: SimpleSpan,
+        lhs_span: SourceSpan,
+        rhs_span: SourceSpan,
     },
     Unary(UnaryOperation),
     // The same as a jump but it pushes a new environment frame to the procedure stack (which is separate from the instruction stack)

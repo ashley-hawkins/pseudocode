@@ -2,7 +2,6 @@ pub mod token;
 pub mod instruction;
 pub mod lexer;
 pub mod parser;
-pub mod test;
 pub mod type_checker;
 pub mod util;
 

@@ -5,7 +5,10 @@ use logos::{
     Logos,
 };
 
-use crate::token::{self, Token, source_byte_range_to_source_span};
+use crate::{
+    token::{self, Token},
+    util::{SourceSpan, source_byte_range_to_source_span},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IndentationCharacter {
@@ -297,14 +300,14 @@ fn handle_whitespace<'src>(
 
 pub fn lex_str<'src>(
     source: &'src str,
-) -> impl Iterator<Item = (Result<token::Token<'src>, LexerError>, token::SourceSpan)> {
-    let mut lexer = LexerToken::lexer_with_extras(source, LexerState::default());
+) -> impl Iterator<Item = (Result<token::Token<'src>, LexerError>, SourceSpan)> {
+    let mut lexer = LexerToken::lexer(source);
 
     std::iter::from_fn({
         let mut once_flag = true;
         let mut failed = false;
-        let mut queue: VecDeque<(token::Token, token::SourceSpan)> = VecDeque::new();
-        move || -> Option<(Result<token::Token, LexerError>, token::SourceSpan)> {
+        let mut queue: VecDeque<(token::Token, SourceSpan)> = VecDeque::new();
+        move || -> Option<(Result<token::Token, LexerError>, SourceSpan)> {
             if failed {
                 return None;
             }
@@ -446,7 +449,7 @@ fn into_final_tokens<'src>(
 
 #[cfg(test)]
 mod tests {
-    use crate::token::{OneIndexed, ZeroIndexed};
+    use crate::util::{OneIndexed, SourceLocation, ZeroIndexed};
 
     use super::*;
     #[test]
@@ -473,9 +476,9 @@ else
             tokens[0],
             (
                 token::Token::Identifier("currentVal"),
-                token::SourceSpan {
-                    start: token::SourceLocation::<OneIndexed>::new(77, 3, 1).to_zero_indexed(),
-                    end: token::SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
+                SourceSpan {
+                    start: SourceLocation::<OneIndexed>::new(77, 3, 1).to_zero_indexed(),
+                    end: SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
                 }
             )
         );

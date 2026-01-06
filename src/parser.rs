@@ -2,10 +2,9 @@ use chumsky::{
     input::ValueInput,
     pratt::{infix, left, postfix, prefix},
     prelude::*,
-    span::Spanned,
 };
 
-use crate::token::{self, Token};
+use crate::{token::{self, Token}, util::SourceSpan};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct GotoStatement {
@@ -173,7 +172,7 @@ pub enum Mode {
 
 pub fn parse_pseudocode_program<
     'src,
-    I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
+    I: ValueInput<'src, Token = Token<'src>, Span = SourceSpan>,
 >(
     mode: Mode,
 ) -> impl chumsky::prelude::Parser<'src, I, AstRoot<'src>, chumsky::extra::Err<Rich<'src, Token<'src>>>>
@@ -238,7 +237,7 @@ pub fn parse_pseudocode_program<
         fn fold_binary_operation<
             'src,
             'b,
-            I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
+            I: ValueInput<'src, Token = Token<'src>, Span = SourceSpan>,
         >(
             lhs: Spanned<Expr<'src>>,
             op: Spanned<Token<'src>>,
@@ -460,7 +459,8 @@ pub fn parse_pseudocode_program<
 mod tests {
     use chumsky::input::Stream;
 
-    use crate::token::{SourceSpan, Token};
+    use crate::util::{SourceLocation, SourceSpan};
+    use crate::token::Token;
 
     use super::*;
     #[test]
@@ -492,9 +492,8 @@ Procedure SyntaxTest(a, b):
             .map(|(res, span)| (res.unwrap_or_else(Token::Error), span));
 
         let token_stream = Stream::from_iter(lexer).map(
-            SimpleSpan::from(source.len()..source.len()),
-            |(token, span): (Token, SourceSpan)| (token, (span.start.bytes..span.end.bytes).into()),
-        );
+            SourceSpan::new(SourceLocation::default(), SourceLocation::default()),
+            |(token, span): (Token, SourceSpan)| (token, span));
 
         let parser = parse_pseudocode_program(Mode::default());
         let result = parser.parse(token_stream);
