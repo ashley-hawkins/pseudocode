@@ -449,7 +449,7 @@ fn into_final_tokens<'src>(
 
 #[cfg(test)]
 mod tests {
-    use crate::util::{OneIndexed, SourceLocation, ZeroIndexed};
+    use crate::util::{OneIndexed, SourceLocation};
 
     use super::*;
     #[test]

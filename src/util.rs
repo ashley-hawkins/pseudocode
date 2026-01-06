@@ -4,10 +4,10 @@ use std::ops::Range;
 
 use chumsky::span::{Span, WrappingSpan};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ZeroIndexed;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OneIndexed;
 
 trait IndexingType {}
@@ -15,24 +15,13 @@ trait IndexingType {}
 impl IndexingType for ZeroIndexed {}
 impl IndexingType for OneIndexed {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(private_bounds)]
 pub struct SourceLocation<Indexing: IndexingType = ZeroIndexed> {
     pub bytes: usize,
     pub line: usize,
     pub column: usize,
     _marker: std::marker::PhantomData<Indexing>,
-}
-
-impl Default for SourceLocation<ZeroIndexed> {
-    fn default() -> Self {
-        SourceLocation {
-            bytes: usize::MAX,
-            line: 0,
-            column: 0,
-            _marker: std::marker::PhantomData,
-        }
-    }
 }
 
 #[allow(private_bounds)]
@@ -46,7 +35,7 @@ impl<T: IndexingType> SourceLocation<T> {
         }
     }
 
-    pub fn is_valid(&self) -> bool {
+    pub fn is_eof(&self) -> bool {
         self.bytes != usize::MAX
     }
 }
@@ -64,6 +53,26 @@ impl SourceLocation<ZeroIndexed> {
     pub fn new_from_bytes(bytes: usize, line_offsets: &[usize]) -> Self {
         offset_to_source_location(bytes, line_offsets)
     }
+
+    pub fn eof() -> Self {
+        SourceLocation {
+            bytes: usize::MAX,
+            line: 0,
+            column: 0,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Default for SourceLocation<ZeroIndexed> {
+    fn default() -> Self {
+        SourceLocation {
+            bytes: 0,
+            line: 0,
+            column: 0,
+            _marker: std::marker::PhantomData,
+        }
+    }
 }
 
 impl SourceLocation<OneIndexed> {
@@ -77,7 +86,7 @@ impl SourceLocation<OneIndexed> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct SourceSpan {
     pub start: SourceLocation,
     pub end: SourceLocation,
@@ -92,6 +101,13 @@ impl SourceSpan {
         SourceSpan {
             start: offset_to_source_location(range.start, line_offsets),
             end: offset_to_source_location(range.end, line_offsets),
+        }
+    }
+
+    pub fn eof() -> Self {
+        SourceSpan {
+            start: SourceLocation::eof(),
+            end: SourceLocation::eof(),
         }
     }
 }

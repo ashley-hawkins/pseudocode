@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chumsky::span::{SimpleSpan, Spanned};
+use crate::util::{SourceSpan, Spanned};
 
 use crate::parser::{ArrayIndex, BinaryOperator, Expr, UnaryOperator};
 
@@ -25,11 +25,11 @@ impl Display for Type {
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Debug, thiserror::Error)]
+#[derive(Clone, PartialEq, Debug, thiserror::Error)]
 pub enum TypeError {
     #[error("Type mismatch: expected {expected}, but this expression has type {found}")]
     TypeMismatch {
-        origin: SimpleSpan,
+        origin: SourceSpan,
         expected: Type,
         found: Type,
     },

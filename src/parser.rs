@@ -4,7 +4,7 @@ use chumsky::{
     prelude::*,
 };
 
-use crate::{token::{self, Token}, util::SourceSpan};
+use crate::{token::{self, Token}, util::{SourceSpan, Spanned}};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct GotoStatement {
@@ -175,7 +175,7 @@ pub fn parse_pseudocode_program<
     I: ValueInput<'src, Token = Token<'src>, Span = SourceSpan>,
 >(
     mode: Mode,
-) -> impl chumsky::prelude::Parser<'src, I, AstRoot<'src>, chumsky::extra::Err<Rich<'src, Token<'src>>>>
+) -> impl chumsky::prelude::Parser<'src, I, AstRoot<'src>, extra::Full<Rich<'src, Token<'src>, SourceSpan>, (), ()>>
 {
     let variable_access =
         select! { token::Token::Identifier(ident) => ident }.map(Expr::VariableAccess);
@@ -246,7 +246,7 @@ pub fn parse_pseudocode_program<
                 'src,
                 'b,
                 I,
-                extra::Full<Rich<'src, Token<'src>>, (), ()>,
+                extra::Full<Rich<'src, Token<'src>, SourceSpan>, (), ()>,
             >,
         ) -> Spanned<Expr<'src>> {
             Spanned {
@@ -492,7 +492,7 @@ Procedure SyntaxTest(a, b):
             .map(|(res, span)| (res.unwrap_or_else(Token::Error), span));
 
         let token_stream = Stream::from_iter(lexer).map(
-            SourceSpan::new(SourceLocation::default(), SourceLocation::default()),
+            SourceSpan::eof(),
             |(token, span): (Token, SourceSpan)| (token, span));
 
         let parser = parse_pseudocode_program(Mode::default());
