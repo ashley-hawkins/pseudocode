@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use ariadne::{Color, Label, Report, ReportKind, Source, sources};
+use ariadne::{Color, Label, Report, ReportKind, sources};
 use chumsky::error::RichReason;
 use clap::Parser;
 use pseudocode::{

@@ -1,6 +1,6 @@
-use std::{fmt::Display, ops::Range};
+use std::fmt::Display;
 
-use crate::lexer::{self, IndentationChange, LexerError, NewlineMetadata};
+use crate::lexer::LexerError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BracketKind {
