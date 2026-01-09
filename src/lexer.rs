@@ -95,6 +95,7 @@ enum LexerToken<'a> {
     #[token(",")]
     Comma,
     #[token("<-")]
+    #[token("←")]
     Assign,
     #[token("<->")]
     Swap,
@@ -103,20 +104,25 @@ enum LexerToken<'a> {
     #[token(">")]
     Gt,
     #[token("<=")]
+    #[token("≤")]
     Lte,
     #[token(">=")]
+    #[token("≥")]
     Gte,
     #[token("=")]
     Eq,
     #[token("/=")]
+    #[token("≠")]
     Neq,
     #[token("+")]
     Add,
     #[token("-")]
     Subtract,
     #[token("*")]
+    #[token("×")]
     Multiply,
     #[token("/")]
+    #[token("÷")]
     Divide,
     #[token("and")]
     And,
@@ -141,6 +147,8 @@ enum LexerToken<'a> {
     //   Control flow
     #[regex("[Pp]rocedure")]
     Procedure,
+    #[regex("[Aa]lgorithm")]
+    Algorithm,
     #[token("for")]
     For,
     #[token("to")]
@@ -178,8 +186,8 @@ enum LexerToken<'a> {
     )]
     Newline(NewlineMetadata),
 
-    #[regex(".", priority = 0)]
-    UnexpectedCharacter,
+    #[regex(".", priority = 0, callback = |lex| lex.slice().chars().next().unwrap())]
+    UnexpectedCharacter(char),
 }
 
 fn handle_whitespace<'src>(
@@ -406,6 +414,7 @@ fn into_final_tokens<'src>(
                     LexerToken::Ascending => Token::Ascending,
                     LexerToken::Descending => Token::Descending,
                     LexerToken::Procedure => Token::Procedure,
+                    LexerToken::Algorithm => Token::Algorithm,
                     LexerToken::For => Token::For,
                     LexerToken::To => Token::To,
                     LexerToken::Do => Token::Do,
@@ -438,7 +447,7 @@ fn into_final_tokens<'src>(
 
                         return Ok(((Token::Newline, newline_range), additional_tokens));
                     }
-                    LexerToken::UnexpectedCharacter => Token::UnexpectedCharacter,
+                    LexerToken::UnexpectedCharacter(c) => Token::UnexpectedCharacter(c),
                 },
                 source_location,
             ),

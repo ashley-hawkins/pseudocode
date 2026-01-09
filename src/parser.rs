@@ -4,7 +4,9 @@ use chumsky::{
     prelude::*,
 };
 
-use crate::{token::{self, Token}, util::{SourceSpan, Spanned}};
+use crate::{
+    expr::{ArrayIndex, BinaryOperator, Expr, UnaryOperator}, token::{self, Token}, util::{SourceSpan, Spanned}
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct GotoStatement {
@@ -23,7 +25,7 @@ pub struct SwapStatement<'a> {
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
-pub struct Block<'a>(Vec<Spanned<Statement<'a>>>);
+pub struct Block<'a>(pub Vec<Spanned<Statement<'a>>>);
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct IfStatement<'a> {
@@ -52,92 +54,6 @@ pub struct AssignmentStatement<'a> {
     pub expression: Spanned<Expr<'a>>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum BinaryOperator {
-    Add,
-    Sub,
-    Mul,
-    Div,
-
-    And,
-    Or,
-
-    Lt,
-    Gt,
-    Lte,
-    Gte,
-    Eq,
-    Neq,
-}
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum BinaryOperationFromTokenError<'a> {
-    #[error("Token is not a binary operator: {0:?}")]
-    NotABinaryOperator(Token<'a>),
-}
-
-impl<'a> TryFrom<Token<'a>> for BinaryOperator {
-    type Error = BinaryOperationFromTokenError<'a>;
-
-    fn try_from(value: Token<'a>) -> Result<Self, Self::Error> {
-        match value {
-            Token::Add => Ok(BinaryOperator::Add),
-            Token::Subtract => Ok(BinaryOperator::Sub),
-            Token::Multiply => Ok(BinaryOperator::Mul),
-            Token::Divide => Ok(BinaryOperator::Div),
-            Token::And => Ok(BinaryOperator::And),
-            Token::Or => Ok(BinaryOperator::Or),
-            Token::Lt => Ok(BinaryOperator::Lt),
-            Token::Gt => Ok(BinaryOperator::Gt),
-            Token::Lte => Ok(BinaryOperator::Lte),
-            Token::Gte => Ok(BinaryOperator::Gte),
-            Token::Eq => Ok(BinaryOperator::Eq),
-            Token::Neq => Ok(BinaryOperator::Neq),
-            _ => Err(BinaryOperationFromTokenError::NotABinaryOperator(value)),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum UnaryOperator {
-    Neg,
-    Not,
-}
-
-#[derive(Clone, PartialEq, PartialOrd, Debug)]
-pub enum ArrayIndex<'a> {
-    SingleIndex(Box<Spanned<Expr<'a>>>),
-    Slice {
-        start: Option<Box<Spanned<Expr<'a>>>>,
-        colon: Spanned<()>,
-        end: Option<Box<Spanned<Expr<'a>>>>,
-    },
-}
-
-#[derive(Clone, PartialEq, PartialOrd, Debug)]
-pub enum Expr<'a> {
-    NumberLiteral(f64),
-    BooleanLiteral(bool),
-    VariableAccess(&'a str),
-    FunctionCall {
-        left: Spanned<&'a str>,
-        arguments: Spanned<Vec<Spanned<Expr<'a>>>>,
-    },
-    ArrayAccess {
-        left: Box<Spanned<Expr<'a>>>,
-        right: Spanned<ArrayIndex<'a>>,
-    },
-    BinaryOp {
-        left: Box<Spanned<Expr<'a>>>,
-        op: Spanned<BinaryOperator>,
-        right: Box<Spanned<Expr<'a>>>,
-    },
-    UnaryOp {
-        op: Spanned<UnaryOperator>,
-        expr: Box<Spanned<Expr<'a>>>,
-    },
-}
-
 #[derive(Clone, PartialEq, PartialOrd, Debug, derive_more::From)]
 pub enum Statement<'a> {
     Goto(GotoStatement),
@@ -147,6 +63,7 @@ pub enum Statement<'a> {
     While(WhileStatement<'a>),
     For(ForStatement<'a>),
     Return(ReturnStatement<'a>),
+    BareExpr(Spanned<Expr<'a>>),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -175,17 +92,20 @@ pub fn parse_pseudocode_program<
     I: ValueInput<'src, Token = Token<'src>, Span = SourceSpan>,
 >(
     mode: Mode,
-) -> impl chumsky::prelude::Parser<'src, I, AstRoot<'src>, extra::Full<Rich<'src, Token<'src>, SourceSpan>, (), ()>>
-{
+) -> impl chumsky::prelude::Parser<
+    'src,
+    I,
+    AstRoot<'src>,
+    extra::Full<Rich<'src, Token<'src>, SourceSpan>, (), ()>,
+> {
     let variable_access =
         select! { token::Token::Identifier(ident) => ident }.map(Expr::VariableAccess);
 
     let boolean_literal =
         select! { token::Token::BoolLiteral(value) => value }.map(Expr::BooleanLiteral);
 
-    let number_literal =
-        select! { token::Token::NumberLiteral(value) => value.parse().unwrap() }
-            .map(Expr::NumberLiteral);
+    let number_literal = select! { token::Token::NumberLiteral(value) => value.parse().unwrap() }
+        .map(Expr::NumberLiteral);
 
     let value = choice((boolean_literal, number_literal, variable_access));
 
@@ -359,23 +279,26 @@ pub fn parse_pseudocode_program<
             .then_ignore(just(Token::Newline))
             .map(|(ident_1, ident_2)| Statement::from(SwapStatement { ident_1, ident_2 }));
 
-        let if_statement = expr
-            .clone()
-            .delimited_by(just(Token::If), just([Token::Then, Token::Newline]))
-            .then(indented_block.clone())
-            .then(
-                just(Token::Else)
-                    .ignore_then(just(Token::Newline))
-                    .ignore_then(indented_block.clone())
-                    .or_not(),
-            )
-            .map(|((condition, then_branch), else_branch)| {
-                Statement::from(IfStatement {
-                    condition,
-                    then_branch,
-                    else_branch,
+        let if_statement = recursive(|if_statement| {
+            expr.clone()
+                .delimited_by(just(Token::If), just([Token::Then, Token::Newline]))
+                .then(indented_block.clone())
+                .then(
+                    just(Token::Else)
+                        .ignore_then(choice((
+                            if_statement.clone().spanned().map(|stmt| Block(vec![stmt])),
+                            just(Token::Newline).ignore_then(indented_block.clone()),
+                        )))
+                        .or_not(),
+                )
+                .map(|((condition, then_branch), else_branch)| {
+                    Statement::from(IfStatement {
+                        condition,
+                        then_branch,
+                        else_branch,
+                    })
                 })
-            });
+        });
 
         let while_statement = expr
             .clone()
@@ -401,6 +324,7 @@ pub fn parse_pseudocode_program<
             });
 
         let return_statement = expr
+            .clone()
             .or_not()
             .delimited_by(just(Token::Return), just(Token::Newline))
             .map(|expr_opt| Statement::from(ReturnStatement { expr: expr_opt }));
@@ -413,6 +337,8 @@ pub fn parse_pseudocode_program<
             for_statement,
             assignment_statement,
             swap_statement,
+            expr.clone()
+                .map(|e| Statement::from(Statement::BareExpr(e))),
         ))
     });
 
@@ -448,31 +374,50 @@ pub fn parse_pseudocode_program<
     procedure
         .repeated()
         .collect::<Vec<_>>()
-        .then(block)
+        .then(just([Token::Algorithm, Token::Colon, Token::Newline]).ignore_then(indented_block))
         .map(|(procedures, statements)| AstRoot {
             procedures,
             statements,
         })
 }
 
+pub fn parse_str(
+    src: &str,
+    mode: Mode,
+) -> ParseResult<AstRoot<'_>, Rich<'_, Token<'_>, SourceSpan>> {
+    let lexer =
+        crate::lexer::lex_str(src).map(|(res, span)| (res.unwrap_or_else(Token::Error), span));
+
+    let token_stream = chumsky::input::Stream::from_iter(lexer)
+        .map(SourceSpan::eof(), |(token, span): (Token, SourceSpan)| {
+            (token, span)
+        });
+
+    let parser = parse_pseudocode_program(mode);
+
+    parser.parse(token_stream)
+}
+
 #[cfg(test)]
 mod tests {
     use chumsky::input::Stream;
 
-    use crate::util::{SourceLocation, SourceSpan};
     use crate::token::Token;
+    use crate::util::{SourceLocation, SourceSpan};
 
     use super::*;
     #[test]
-    fn test_parse_goto_statement() {
+    fn test_parse() {
         let source = r##"
 Procedure SyntaxTest(a, b):
     if x > 10 then
         goto line 1
-    else
+    else if x = 10 then
         x <- x + 1
         y <- true
         z <- a[1:2]
+    else
+        _ <- test
 
     while true do
         goto line 10
@@ -486,17 +431,12 @@ Procedure SyntaxTest(a, b):
     
     return 10
     return
+
+Algorithm:
+    _ <- SyntaxTest(5, 10)
 "##;
 
-        let lexer = crate::lexer::lex_str(source)
-            .map(|(res, span)| (res.unwrap_or_else(Token::Error), span));
-
-        let token_stream = Stream::from_iter(lexer).map(
-            SourceSpan::eof(),
-            |(token, span): (Token, SourceSpan)| (token, span));
-
-        let parser = parse_pseudocode_program(Mode::default());
-        let result = parser.parse(token_stream);
+        let result = parse_str(source, Mode::default());
 
         println!("{:#?}", result);
 

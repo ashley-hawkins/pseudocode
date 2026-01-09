@@ -36,7 +36,7 @@ impl<T: IndexingType> SourceLocation<T> {
     }
 
     pub fn is_eof(&self) -> bool {
-        self.bytes != usize::MAX
+        self.bytes == usize::MAX
     }
 }
 
@@ -86,10 +86,16 @@ impl SourceLocation<OneIndexed> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct SourceSpan {
     pub start: SourceLocation,
     pub end: SourceLocation,
+}
+
+impl std::fmt::Debug for SourceSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}..{}:{}", self.start.line + 1, self.start.column + 1, self.end.line + 1, self.end.column + 1)
+    }
 }
 
 impl SourceSpan {
@@ -109,6 +115,10 @@ impl SourceSpan {
             start: SourceLocation::eof(),
             end: SourceLocation::eof(),
         }
+    }
+
+    pub fn is_eof(&self) -> bool {
+        self.start.is_eof() && self.end.is_eof()
     }
 }
 
