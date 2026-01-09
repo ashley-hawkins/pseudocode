@@ -36,89 +36,92 @@ fn main() {
 
     if let Some(ast) = result.output() {
         println!("{:#?}", ast);
-        if let Err(e) = ast.validate_types() {
-            let report = Report::build(
-                ReportKind::Error,
-                (
-                    file_name.clone(),
-                    e.origin_expr.span.start.bytes..e.origin_expr.span.end.bytes,
-                ),
-            )
-            .with_message(format!(
-                "Type mismatch: expected {}, found {}",
-                e.expected, e.found
-            ))
-            .with_labels([
-                Label::new((
-                    file_name.clone(),
-                    e.origin_expr.span.start.bytes..e.origin_expr.span.end.bytes,
-                ))
-                .with_message(format!("expected type {}, but this expression results in type {}", e.expected, e.found))
-                .with_color(Color::Red),
-                Label::new((
-                    file_name.clone(),
-                    match e.context_expr.inner {
-                        Expr::BinaryOp { op, .. } => op.span.start.bytes..op.span.end.bytes,
-                        _ => e.context_expr.span.start.bytes..e.context_expr.span.end.bytes,
-                    },
-                ))
-                .with_color(Color::Yellow)
-                .with_message(match e.context_expr.inner {
-                    Expr::BinaryOp { op, .. } => {
-                        let op_name = op.inner.to_string();
+        let type_errors = ast.validate_types();
 
-                        format!(
-                            "hint: operator '{}' expects operands of type {}",
-                            op_name, e.expected
-                        )
-                    }
-                    Expr::UnaryOp { op, .. } => {
-                        format!(
-                            "hint: unary operator '{}' expects operand of type {}",
-                            op.inner, e.expected
-                        )
-                    }
-                    Expr::FunctionCall { .. } => {
-                        panic!("function args are dynamic so this code should never run")
-                    }
-                    Expr::ArrayAccess { left, right } => match right.inner {
-                        ArrayIndex::SingleIndex(idx) => {
-                            if e.origin_expr.span == idx.span {
-                                format!(
-                                    "hint: the right side of a subscript operation must be of type {}",
-                                    e.expected
-                                )
-                            } else if e.origin_expr.span == left.span {
-                                format!(
-                                    "hint: the left side of a subscript operation must be of type {}",
-                                    e.expected
-                                )
-                            } else {
-                                panic!("type error context does not match any sub-expression")
-                            }
+        for e in type_errors {
+            let report = Report::build(
+                    ReportKind::Error,
+                    (
+                        file_name.clone(),
+                        e.origin_expr.span.start.bytes..e.origin_expr.span.end.bytes,
+                    ),
+                )
+                .with_message(format!(
+                    "Type mismatch: expected {}, found {}",
+                    e.expected, e.found
+                ))
+                .with_labels([
+                    Label::new((
+                        file_name.clone(),
+                        e.origin_expr.span.start.bytes..e.origin_expr.span.end.bytes,
+                    ))
+                    .with_message(format!("expected type {}, but this expression results in type {}", e.expected, e.found))
+                    .with_color(Color::Red),
+                    Label::new((
+                        file_name.clone(),
+                        match &e.context_expr.inner {
+                            Expr::BinaryOp { op, .. } => op.span.start.bytes..op.span.end.bytes,
+                            Expr::ArrayAccess { left, right } => right.span.start.bytes..right.span.end.bytes,
+                            _ => e.context_expr.span.start.bytes..e.context_expr.span.end.bytes,
+                        },
+                    ))
+                    .with_color(Color::Yellow)
+                    .with_message(match e.context_expr.inner {
+                        Expr::BinaryOp { op, .. } => {
+                            let op_name = op.inner.to_string();
+
+                            format!(
+                                "hint: operator '{}' expects operands of type {}",
+                                op_name, e.expected
+                            )
                         }
-                        ArrayIndex::Slice { start, end, .. } => {
-                            if Some(e.origin_expr.span) == start.map(|s| s.span)
-                                || Some(e.origin_expr.span) == end.map(|s| s.span)
-                            {
-                                format!(
-                                    "hint: indices of a slice operation must be of type {}",
-                                    e.expected
-                                )
-                            } else if e.origin_expr.span == left.span {
-                                format!(
-                                    "hint: the left side of a slice operation must be of type {}",
-                                    e.expected
-                                )
-                            } else {
-                                panic!("type error context does not match any sub-expression")
-                            }
+                        Expr::UnaryOp { op, .. } => {
+                            format!(
+                                "hint: unary operator '{}' expects operand of type {}",
+                                op.inner, e.expected
+                            )
                         }
-                    },
-                    _ => panic!("type error context does not match any sub-expression"),
-                }),
-            ])
-            .finish();
+                        Expr::FunctionCall { .. } => {
+                            panic!("function args are dynamic so this code should never run")
+                        }
+                        Expr::ArrayAccess { left, right } => match right.inner {
+                            ArrayIndex::SingleIndex(idx) => {
+                                if e.origin_expr.span == idx.span {
+                                    format!(
+                                        "hint: the right side of this subscript operation must be of type {}",
+                                        e.expected
+                                    )
+                                } else if e.origin_expr.span == left.span {
+                                    format!(
+                                        "hint: the left side of this subscript operation must be of type {}",
+                                        e.expected
+                                    )
+                                } else {
+                                    panic!("type error context does not match any sub-expression")
+                                }
+                            }
+                            ArrayIndex::Slice { start, end, .. } => {
+                                if Some(e.origin_expr.span) == start.map(|s| s.span)
+                                    || Some(e.origin_expr.span) == end.map(|s| s.span)
+                                {
+                                    format!(
+                                        "hint: indices of a slice operation must be of type {}",
+                                        e.expected
+                                    )
+                                } else if e.origin_expr.span == left.span {
+                                    format!(
+                                        "hint: the left side of a slice operation must be of type {}",
+                                        e.expected
+                                    )
+                                } else {
+                                    panic!("type error context does not match any sub-expression")
+                                }
+                            }
+                        },
+                        _ => panic!("type error context does not match any sub-expression"),
+                    }),
+                ])
+                .finish();
 
             report
                 .print(sources([(file_name.clone(), src.clone())]))
