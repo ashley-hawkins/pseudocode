@@ -5,7 +5,9 @@ use chumsky::{
 };
 
 use crate::{
-    expr::{ArrayIndex, BinaryOperator, Expr, UnaryOperator}, token::{self, Token}, util::{SourceSpan, Spanned}
+    expr::{ArrayIndex, BinaryOperator, Expr, UnaryOperator},
+    token::{self, Token},
+    util::{SourceSpan, Spanned},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

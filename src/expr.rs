@@ -1,7 +1,5 @@
 use crate::{token::Token, util::Spanned};
 
-
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum BinaryOperator {
     Add,

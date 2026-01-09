@@ -131,7 +131,9 @@ impl Display for Token<'_> {
             Token::Indent => write!(f, "<indent>"),
             Token::Dedent => write!(f, "<dedent>"),
             Token::Newline => write!(f, "<newline>"),
-            Token::UnexpectedCharacter(c) => write!(f, "<unexpected character caught by lexer: '{c}'>"),
+            Token::UnexpectedCharacter(c) => {
+                write!(f, "<unexpected character caught by lexer: '{c}'>")
+            }
         }
     }
 }
