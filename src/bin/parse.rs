@@ -59,10 +59,13 @@ fn main() {
             )
             .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
             .with_message(match error.reason() {
-                x @ RichReason::ExpectedFound {
-                    expected: _,
-                    found: _,
-                } => "Encountered unexpected token".to_string(),
+                RichReason::ExpectedFound { expected: _, found } => format!(
+                    "Encountered unexpected {}",
+                    match found {
+                        Some(f) => format!("token {:?}", f),
+                        None => "end of input".to_string(),
+                    }
+                ),
                 RichReason::Custom(s) => s.clone(),
             })
             .with_label(

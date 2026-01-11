@@ -30,7 +30,7 @@ pub enum IndentationChange {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
-enum TokenValidationError {
+pub enum TokenValidationError {
     #[error("There is a non-indent character in the indentation portion of an indented line.")]
     NonIndentCharacterInIndentation(Range<usize>),
     #[error("Inconsistent use of indentation characters.")]
@@ -46,24 +46,6 @@ pub enum LexerError {
     Unknown,
     #[error("Logical error in token: ")]
     TokenValidationError(#[from] TokenValidationError),
-}
-
-#[derive(Debug)]
-pub enum BracketKind {
-    Round,
-    Square,
-}
-
-#[derive(Debug)]
-enum BracketDirection {
-    Open,
-    Close,
-}
-
-#[derive(Debug)]
-pub struct BracketToken {
-    pub kind: BracketKind,
-    pub direction: BracketDirection,
 }
 
 #[derive(Debug, Clone)]
