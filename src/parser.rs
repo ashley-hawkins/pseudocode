@@ -339,7 +339,7 @@ pub fn parse_pseudocode_program<
             for_statement,
             assignment_statement,
             swap_statement,
-            expr.clone().map(|e| Statement::BareExpr(e)),
+            expr.clone().map(Statement::BareExpr),
         ))
     });
 

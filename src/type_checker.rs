@@ -180,7 +180,7 @@ fn result_type_inner<'a>(
     {
         errs.push(TypeError {
             context,
-            origin_expr: expr.clone().into(),
+            origin_expr: expr.clone(),
             expected: expected_type,
             found: ty,
         });

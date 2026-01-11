@@ -5,8 +5,7 @@ use ariadne::{Color, Label, Report, ReportKind, sources};
 use chumsky::error::RichReason;
 use clap::Parser;
 use pseudocode::{
-    expr::{ArrayIndex, Expr},
-    type_checker::{TypeErrorContext, ValidateTypes, process_type_errors},
+    type_checker::{ValidateTypes, process_type_errors},
     util::SourceSpan,
 };
 
