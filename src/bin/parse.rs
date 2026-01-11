@@ -6,7 +6,7 @@ use chumsky::error::RichReason;
 use clap::Parser;
 use pseudocode::{
     expr::{ArrayIndex, Expr},
-    type_checker::ValidateTypes,
+    type_checker::{TypeErrorContext, ValidateTypes},
     util::SourceSpan,
 };
 
@@ -59,14 +59,21 @@ fn main() {
                     .with_color(Color::Red),
                     Label::new((
                         file_name.clone(),
-                        match &e.context_expr.inner {
-                            Expr::BinaryOp { op, .. } => op.span.start.bytes..op.span.end.bytes,
-                            Expr::ArrayAccess { left, right } => right.span.start.bytes..right.span.end.bytes,
-                            _ => e.context_expr.span.start.bytes..e.context_expr.span.end.bytes,
+                        match &e.context {
+                            TypeErrorContext::SubExprOf(context) => match &context.inner {
+                                Expr::BinaryOp { op, .. } => op.span.start.bytes..op.span.end.bytes,
+                                Expr::ArrayAccess { left, right } => right.span.start.bytes..right.span.end.bytes,
+                                _ => context.span.start.bytes..context.span.end.bytes,
+                            }
+                            TypeErrorContext::IfStatementCond(span) => span.start.bytes..span.end.bytes,
+                            TypeErrorContext::WhileStatementCond(span) => span.start.bytes..span.end.bytes,
+                            TypeErrorContext::ForStatementRange(span) => span.start.bytes..span.end.bytes,
+                            TypeErrorContext::Other => e.origin_expr.span.start.bytes..e.origin_expr.span.end.bytes,
                         },
                     ))
                     .with_color(Color::Yellow)
-                    .with_message(match e.context_expr.inner {
+                    .with_message(match &e.context {
+                        TypeErrorContext::SubExprOf(context) => match &context.inner {
                         Expr::BinaryOp { op, .. } => {
                             let op_name = op.inner.to_string();
 
@@ -84,7 +91,7 @@ fn main() {
                         Expr::FunctionCall { .. } => {
                             panic!("function args are dynamic so this code should never run")
                         }
-                        Expr::ArrayAccess { left, right } => match right.inner {
+                        Expr::ArrayAccess { left, right } => match &right.inner {
                             ArrayIndex::SingleIndex(idx) => {
                                 if e.origin_expr.span == idx.span {
                                     format!(
@@ -101,16 +108,16 @@ fn main() {
                                 }
                             }
                             ArrayIndex::Slice { start, end, .. } => {
-                                if Some(e.origin_expr.span) == start.map(|s| s.span)
-                                    || Some(e.origin_expr.span) == end.map(|s| s.span)
+                                if Some(e.origin_expr.span) == start.as_ref().map(|s| s.span)
+                                    || Some(e.origin_expr.span) == end.as_ref().map(|s| s.span)
                                 {
                                     format!(
-                                        "hint: indices of a slice operation must be of type {}",
+                                        "hint: indices of this slice operation must be of type {}",
                                         e.expected
                                     )
                                 } else if e.origin_expr.span == left.span {
                                     format!(
-                                        "hint: the left side of a slice operation must be of type {}",
+                                        "hint: the left side of this slice operation must be of type {}",
                                         e.expected
                                     )
                                 } else {
@@ -119,6 +126,11 @@ fn main() {
                             }
                         },
                         _ => panic!("type error context does not match any sub-expression"),
+                                            }
+                        TypeErrorContext::IfStatementCond(_) => format!("hint: the condition for this if statement must be of type {}", e.expected),
+                        TypeErrorContext::WhileStatementCond(_) => format!("hint: the condition for this while loop must be of type {}", e.expected),
+                        TypeErrorContext::ForStatementRange(_) => format!("hint: the bounds for this for loop must be of type {}", e.expected),
+                        TypeErrorContext::Other => todo!(),
                     }),
                 ])
                 .finish();
