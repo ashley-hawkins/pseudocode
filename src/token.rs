@@ -137,33 +137,3 @@ impl Display for Token<'_> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::util::SourceLocation;
-
-    #[test]
-    fn test_offset_to_source_location() {
-        let line_offsets = vec![10, 20, 30];
-        let loc = SourceLocation::new_from_bytes(15, &line_offsets);
-        assert_eq!(loc.line, 1);
-        assert_eq!(loc.column, 5);
-    }
-
-    #[test]
-    fn test_offset_to_source_location_beginning() {
-        let line_offsets = vec![10, 20, 30];
-        let loc = SourceLocation::new_from_bytes(5, &line_offsets);
-        assert_eq!(loc.line, 0);
-        assert_eq!(loc.column, 5);
-    }
-
-    #[test]
-    fn test_offset_to_source_location_0() {
-        let line_offsets = vec![10, 20, 30];
-        let loc = SourceLocation::new_from_bytes(0, &line_offsets);
-        assert_eq!(loc.line, 0);
-        assert_eq!(loc.column, 0);
-    }
-}

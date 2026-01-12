@@ -167,7 +167,7 @@ impl Span for SourceSpan {
 
     type Offset = SourceLocation;
 
-    fn new(context: Self::Context, range: std::ops::Range<Self::Offset>) -> Self {
+    fn new(_context: Self::Context, range: std::ops::Range<Self::Offset>) -> Self {
         Self {
             start: range.start,
             end: range.end,
@@ -200,5 +200,34 @@ impl<T> WrappingSpan<T> for SourceSpan {
 
     fn span_of(spanned: &Self::Spanned) -> &Self {
         &spanned.span
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_offset_to_source_location() {
+        let line_offsets = vec![10, 20, 30];
+        let loc = SourceLocation::new_from_bytes(15, &line_offsets);
+        assert_eq!(loc.line, 1);
+        assert_eq!(loc.column, 5);
+    }
+
+    #[test]
+    fn test_offset_to_source_location_beginning() {
+        let line_offsets = vec![10, 20, 30];
+        let loc = SourceLocation::new_from_bytes(5, &line_offsets);
+        assert_eq!(loc.line, 0);
+        assert_eq!(loc.column, 5);
+    }
+
+    #[test]
+    fn test_offset_to_source_location_0() {
+        let line_offsets = vec![10, 20, 30];
+        let loc = SourceLocation::new_from_bytes(0, &line_offsets);
+        assert_eq!(loc.line, 0);
+        assert_eq!(loc.column, 0);
     }
 }

@@ -213,7 +213,7 @@ impl<'a> ValidateTypes<'a> for AstRoot<'a> {
         for procedure in &self.procedures {
             procedure.validate_types_into(errs);
         }
-        for statement in &self.statements.0 {
+        for statement in &self.main_algorithm.0 {
             statement.validate_types_into(errs);
         }
     }

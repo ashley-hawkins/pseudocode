@@ -77,8 +77,8 @@ pub struct ProcedureDefinition<'a> {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct AstRoot<'a> {
-    pub procedures: Vec<ProcedureDefinition<'a>>,
-    pub statements: Block<'a>,
+    pub procedures: Vec<Spanned<ProcedureDefinition<'a>>>,
+    pub main_algorithm: Spanned<Block<'a>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
@@ -373,12 +373,13 @@ pub fn parse_pseudocode_program<
         });
 
     procedure
+        .spanned()
         .repeated()
         .collect::<Vec<_>>()
-        .then(just([Token::Algorithm, Token::Colon, Token::Newline]).ignore_then(indented_block))
+        .then(just([Token::Algorithm, Token::Colon, Token::Newline]).ignore_then(indented_block).spanned())
         .map(|(procedures, statements)| AstRoot {
             procedures,
-            statements,
+            main_algorithm: statements,
         })
 }
 
@@ -401,11 +402,6 @@ pub fn parse_str(
 
 #[cfg(test)]
 mod tests {
-    use chumsky::input::Stream;
-
-    use crate::token::Token;
-    use crate::util::{SourceLocation, SourceSpan};
-
     use super::*;
     #[test]
     fn test_parse() {
