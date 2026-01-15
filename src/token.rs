@@ -17,6 +17,10 @@ pub enum BracketDirection {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token<'src> {
     Error(LexerError),
+
+    Debug,
+    DebugLn,
+    StringLiteral(&'src str),
     Identifier(&'src str),
 
     // Operators
@@ -85,7 +89,10 @@ pub enum Token<'src> {
 impl Display for Token<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Token::Debug => write!(f, "DEBUG"),
+            Token::DebugLn => write!(f, "DEBUGLN"),
             Token::Error(e) => write!(f, "Error({})", e),
+            Token::StringLiteral(s) => write!(f, "<string literal: \"{}\">", s),
             Token::Identifier(s) => write!(f, "{:?}", s),
             Token::Lt => write!(f, "<"),
             Token::Lte => write!(f, "<="),

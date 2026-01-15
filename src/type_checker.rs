@@ -249,6 +249,13 @@ impl<'a> ValidateTypes<'a> for Spanned<Statement<'a>> {
                 .span
                 .make_wrapped(stmt.clone())
                 .validate_types_into(errs),
+            Statement::Debug(stmt) => {
+                for expr in &stmt.args {
+                    if let crate::parser::DebugArgument::Expr(e) = expr {
+                        self.span.make_wrapped(e.clone()).validate_types_into(errs);
+                    }
+                }
+            }
             Statement::BareExpr(stmt) => self
                 .span
                 .make_wrapped(stmt.clone())

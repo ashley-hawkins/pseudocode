@@ -286,6 +286,24 @@ impl<'prog> InterpreterState<'prog> {
                 }
             }
             Instruction::Return => return ControlFlow::Return,
+            Instruction::Debug {
+                with_newline,
+                arg_sources,
+            } => {
+                for source in arg_sources {
+                    match source {
+                        crate::instruction::DebugArgSource::StringLiteral(s) => print!("{}", s),
+                        crate::instruction::DebugArgSource::Stack => {
+                            let value = self.pop_value();
+                            print!("{}", value.inner);
+                        }
+                    }
+                }
+
+                if *with_newline {
+                    println!();
+                }
+            }
             Instruction::FunctionHeader { .. } => {
                 panic!("Function header encountered during normal execution")
             }

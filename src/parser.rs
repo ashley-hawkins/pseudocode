@@ -56,6 +56,18 @@ pub struct AssignmentStatement<'a> {
     pub expression: Spanned<Expr<'a>>,
 }
 
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub struct DebugStatement<'a> {
+    pub with_newline: bool,
+    pub args: Vec<DebugArgument<'a>>,
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub enum DebugArgument<'a> {
+    String(&'a str),
+    Expr(Spanned<Expr<'a>>),
+}
+
 #[derive(Clone, PartialEq, PartialOrd, Debug, derive_more::From)]
 pub enum Statement<'a> {
     Goto(GotoStatement),
@@ -66,6 +78,7 @@ pub enum Statement<'a> {
     For(ForStatement<'a>),
     Return(ReturnStatement<'a>),
     BareExpr(Spanned<Expr<'a>>),
+    Debug(DebugStatement<'a>),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -286,6 +299,28 @@ pub fn parse_pseudocode_program<
         .map(|line_number| Statement::from(GotoStatement { line_number }))
         .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
 
+        let debug_statement = one_of([Token::DebugLn, Token::Debug])
+            .spanned()
+            .then(
+                choice((
+                    select! { token::Token::StringLiteral(s) => s }
+                        .map(DebugArgument::String)
+                        .spanned(),
+                    expr.clone().map(DebugArgument::Expr).spanned(),
+                ))
+                .separated_by(just(Token::Comma))
+                .collect::<Vec<_>>(),
+            )
+            .then_ignore(just(Token::Newline))
+            .map(
+                |(token, args): (Spanned<Token>, Vec<Spanned<DebugArgument>>)| {
+                    Statement::from(DebugStatement {
+                        with_newline: matches!(token.inner, Token::DebugLn),
+                        args: args.into_iter().map(|s| s.inner).collect(),
+                    })
+                },
+            );
+
         let assignment_statement = select! { token::Token::Identifier(ident) => ident }
             .spanned()
             .then_ignore(just(token::Token::Assign))
@@ -357,13 +392,16 @@ pub fn parse_pseudocode_program<
 
         choice((
             goto_statement,
+            debug_statement,
             return_statement,
             if_statement,
             while_statement,
             for_statement,
             assignment_statement,
             swap_statement,
-            expr.clone().map(Statement::BareExpr),
+            expr.clone()
+                .then_ignore(just(Token::Newline))
+                .map(Statement::BareExpr),
         ))
     });
 

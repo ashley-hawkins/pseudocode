@@ -5,8 +5,9 @@ use chumsky::span::{Span, WrappingSpan};
 use crate::{
     expr::{BinaryOperator, Expr, UnaryOperator},
     parser::{
-        AssignmentStatement, AstRoot, Block, ForStatement, GotoStatement, IfStatement,
-        ProcedureDefinition, ReturnStatement, Statement, SwapStatement, WhileStatement,
+        AssignmentStatement, AstRoot, Block, DebugStatement, ForStatement, GotoStatement,
+        IfStatement, ProcedureDefinition, ReturnStatement, Statement, SwapStatement,
+        WhileStatement,
     },
     util::Spanned,
 };
@@ -18,6 +19,29 @@ pub enum Value {
     Bool(bool),
     // String(String),
     Array(Rc<RefCell<Vec<Value>>>),
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::None => write!(f, "<null>"),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Bool(b) => write!(f, "{}", b),
+            // Value::String(s) => write!(f, "{}", s),
+            Value::Array(arr) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for v in arr.borrow().iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", v)?;
+                    first = false;
+                }
+                write!(f, "]")
+            }
+        }
+    }
 }
 
 impl From<Vec<Value>> for Value {
@@ -103,6 +127,12 @@ pub enum PushSource {
     Literal(Value),
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub enum DebugArgSource {
+    Stack,
+    StringLiteral(String),
+}
+
 // Generic instruction form where control-flow targets can vary (labels in pass 1, indices in pass 2).
 #[derive(Clone, PartialEq, Debug)]
 pub enum InstructionGeneric<Target> {
@@ -163,6 +193,11 @@ pub enum InstructionGeneric<Target> {
 
     // in: return value
     Return,
+
+    Debug {
+        with_newline: bool,
+        arg_sources: Vec<DebugArgSource>,
+    },
 }
 
 // Uses labels to reference instructions as the labels are only during the second pass.
@@ -273,6 +308,13 @@ impl InstructionGenerationContext {
             }
             InstructionRelative::Unary(unary_operator) => Instruction::Unary(unary_operator),
             InstructionRelative::Return => Instruction::Return,
+            InstructionRelative::Debug {
+                with_newline,
+                arg_sources,
+            } => Instruction::Debug {
+                with_newline,
+                arg_sources,
+            },
         };
 
         instructions
@@ -403,6 +445,29 @@ impl GenerateInstructions for Spanned<Statement<'_>> {
             Statement::While(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
             Statement::For(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
             Statement::Return(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
+            Statement::Debug(DebugStatement { with_newline, args }) => {
+                let sources = args
+                    .iter()
+                    .map(|arg| match arg {
+                        crate::parser::DebugArgument::String(str) => {
+                            DebugArgSource::StringLiteral((*str).to_owned())
+                        }
+                        crate::parser::DebugArgument::Expr(_) => DebugArgSource::Stack,
+                    })
+                    .collect::<Vec<_>>();
+
+                for expr in args.iter().rev().filter_map(|arg| match arg {
+                    crate::parser::DebugArgument::String(_) => None,
+                    crate::parser::DebugArgument::Expr(expr) => Some(expr),
+                }) {
+                    context.push(expr)
+                }
+
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Debug {
+                    with_newline: *with_newline,
+                    arg_sources: sources,
+                }));
+            }
             Statement::BareExpr(expr) => {
                 context.push(expr);
                 // Discard the result of the expression, since the statement does not use it.

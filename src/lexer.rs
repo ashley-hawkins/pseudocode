@@ -63,6 +63,10 @@ pub struct NewlineMetadata {
 #[logos(subpattern line_comment = r"//[^\n]*")]
 #[logos(skip(r"(?&block_comment)|(?&line_comment)", priority = 0))]
 enum LexerToken<'a> {
+    #[token("DEBUG")]
+    Debug,
+    #[token("DEBUGLN")]
+    DebugLn,
     // Single-character tokens
     #[token("(")]
     RoundL,
@@ -159,6 +163,10 @@ enum LexerToken<'a> {
     // More complex tokens
     #[regex(r"[0-9]+(\.[0-9]+)?")]
     NumberLiteral(&'a str),
+    #[regex(r#""([^"\\]|\\.)*""#, callback = |lex| {let slice = lex.slice();
+        &slice[1..slice.len()-1]
+    })]
+    StringLiteral(&'a str),
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Identifier(&'a str),
     // Matches newlines and following indentation. Can also match indentation without a preceding newline at the start of the file.
@@ -368,6 +376,8 @@ fn into_final_tokens<'src>(
         Ok(source_token) => Ok((
             (
                 match source_token {
+                    LexerToken::Debug => Token::Debug,
+                    LexerToken::DebugLn => Token::DebugLn,
                     LexerToken::RoundL => Token::LRoundBracket,
                     LexerToken::RoundR => Token::RRoundBracket,
                     LexerToken::SquareL => Token::LSquareBracket,
@@ -430,6 +440,7 @@ fn into_final_tokens<'src>(
                         return Ok(((Token::Newline, newline_range), additional_tokens));
                     }
                     LexerToken::UnexpectedCharacter(c) => Token::UnexpectedCharacter(c),
+                    LexerToken::StringLiteral(s) => Token::StringLiteral(s),
                 },
                 source_location,
             ),
