@@ -43,7 +43,7 @@ pub enum PushSource {
 
 // Generic instruction form where control-flow targets can vary (labels in pass 1, indices in pass 2).
 #[derive(Clone, PartialEq, Debug)]
-pub enum Instruction<Target> {
+pub enum InstructionGeneric<Target> {
     // Special "instruction" that marks the beginning of a function. This is used to validate the parameter list during FunctionCall instructions.
     FunctionHeader {
         parameters: Vec<String>,
@@ -76,9 +76,9 @@ pub enum Instruction<Target> {
 }
 
 // Uses labels to reference instructions as the labels are only during the second pass.
-pub type InstructionRelative = Instruction<RelativeTarget>;
+pub type InstructionRelative = InstructionGeneric<RelativeTarget>;
 // Uses instruction indices instead of labels.
-pub type InstructionAbsolute = Instruction<usize>;
+pub type Instruction = InstructionGeneric<usize>;
 
 enum InstructionGenerationUnit {
     Placeholder,
@@ -138,7 +138,7 @@ impl InstructionGenerationContext {
 
     // }
 
-    fn finalize(self) -> Vec<Spanned<InstructionAbsolute>> {
+    fn finalize(self) -> Vec<Spanned<Instruction>> {
         let Self {
             labels,
             instructions,
@@ -146,10 +146,10 @@ impl InstructionGenerationContext {
         } = self;
 
         let finalize_single_instruction = move |instr| match instr {
-            Instruction::Jump {
+            InstructionGeneric::Jump {
                 is_conditional,
                 target,
-            } => Instruction::Jump {
+            } => InstructionGeneric::Jump {
                 is_conditional,
                 target: match target {
                     RelativeTarget::Label(label) => *labels
@@ -158,35 +158,37 @@ impl InstructionGenerationContext {
                     RelativeTarget::Index(index) => index,
                 },
             },
-            Instruction::FunctionCall { target, arg_count } => Instruction::FunctionCall {
-                target: match target {
-                    RelativeTarget::Label(label) => *labels
-                        .get(&label)
-                        .expect("Unresolved label during finalization"),
-                    RelativeTarget::Index(index) => index,
-                },
-                arg_count,
-            },
-            Instruction::FunctionHeader { parameters } => {
-                Instruction::FunctionHeader { parameters }
+            InstructionGeneric::FunctionCall { target, arg_count } => {
+                InstructionGeneric::FunctionCall {
+                    target: match target {
+                        RelativeTarget::Label(label) => *labels
+                            .get(&label)
+                            .expect("Unresolved label during finalization"),
+                        RelativeTarget::Index(index) => index,
+                    },
+                    arg_count,
+                }
             }
-            Instruction::Push(push_source) => Instruction::Push(push_source),
-            Instruction::Pop(pop_destination) => Instruction::Pop(pop_destination),
-            Instruction::Binary {
+            InstructionGeneric::FunctionHeader { parameters } => {
+                InstructionGeneric::FunctionHeader { parameters }
+            }
+            InstructionGeneric::Push(push_source) => InstructionGeneric::Push(push_source),
+            InstructionGeneric::Pop(pop_destination) => InstructionGeneric::Pop(pop_destination),
+            InstructionGeneric::Binary {
                 op,
                 lhs_span,
                 rhs_span,
-            } => Instruction::Binary {
+            } => InstructionGeneric::Binary {
                 op,
                 lhs_span,
                 rhs_span,
             },
-            Instruction::ArrayIndex => Instruction::ArrayIndex,
-            Instruction::ArraySlice { has_start, has_end } => {
-                Instruction::ArraySlice { has_start, has_end }
+            InstructionGeneric::ArrayIndex => InstructionGeneric::ArrayIndex,
+            InstructionGeneric::ArraySlice { has_start, has_end } => {
+                InstructionGeneric::ArraySlice { has_start, has_end }
             }
-            Instruction::Unary(unary_operator) => Instruction::Unary(unary_operator),
-            Instruction::Return { with_value } => Instruction::Return { with_value },
+            InstructionGeneric::Unary(unary_operator) => InstructionGeneric::Unary(unary_operator),
+            InstructionGeneric::Return { with_value } => InstructionGeneric::Return { with_value },
         };
 
         instructions
@@ -195,7 +197,9 @@ impl InstructionGenerationContext {
                 InstructionGenerationUnit::Placeholder => {
                     panic!("Unresolved instruction placeholder during finalization")
                 }
-                InstructionGenerationUnit::Instruction(instr) => instr.span.make_wrapped(finalize_single_instruction(instr.inner)),
+                InstructionGenerationUnit::Instruction(instr) => instr
+                    .span
+                    .make_wrapped(finalize_single_instruction(instr.inner)),
             })
             .collect()
     }
@@ -506,7 +510,7 @@ impl GenerateInstructions for AstRoot<'_> {
     }
 }
 
-pub fn generate_instructions_for_ast(ast: &AstRoot<'_>) -> Vec<Spanned<InstructionAbsolute>> {
+pub fn generate_instructions_for_ast(ast: &AstRoot<'_>) -> Vec<Spanned<Instruction>> {
     let mut context = InstructionGenerationContext::new();
     context.push(ast);
     context.finalize()
