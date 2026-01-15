@@ -604,12 +604,28 @@ impl GenerateInstructions for Spanned<ProcedureDefinition<'_>> {
         }
 
         context.push(&self.inner.body);
+
+        // Fallback return of None if no other return was encountered.
+        context.push(
+            &self
+                .span
+                .make_wrapped(Statement::Return(ReturnStatement { expr: None })),
+        );
     }
 }
 
 impl GenerateInstructions for AstRoot<'_> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         context.push(&self.main_algorithm.inner);
+
+        // Fallback return of None if no other return was encountered.
+        context.push(
+            &self
+                .main_algorithm
+                .span
+                .make_wrapped(Statement::Return(ReturnStatement { expr: None })),
+        );
+
         for procedure in &self.procedures {
             context.push(procedure);
         }
