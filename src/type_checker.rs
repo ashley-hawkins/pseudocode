@@ -74,6 +74,8 @@ fn result_type_inner<'a>(
             }
         }
         Expr::BooleanLiteral(_) => Type::Boolean,
+        Expr::Build(_) => Type::Array,
+        Expr::ArrayLiteral(_) => Type::Array,
         Expr::BinaryOp { left, op, right } => match op.inner {
             BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul => {
                 let left_type =

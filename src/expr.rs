@@ -96,6 +96,8 @@ pub enum ArrayIndex<'a> {
 pub enum Expr<'a> {
     NumberLiteral(f64),
     BooleanLiteral(bool),
+    ArrayLiteral(Vec<Spanned<Expr<'a>>>),
+    Build(Box<Spanned<Expr<'a>>>),
     VariableAccess(&'a str),
     FunctionCall {
         left: Spanned<&'a str>,

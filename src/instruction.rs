@@ -28,6 +28,23 @@ impl From<Vec<Value>> for Value {
 
 impl Value {
     // This should be used when popping a value into the environment
+    pub fn move_or_deep_clone(self) -> Self {
+        match self {
+            Value::None => Value::None,
+            Value::Number(n) => Value::Number(n),
+            Value::Bool(b) => Value::Bool(b),
+            // Value::String(s) => Value::String(s),
+            Value::Array(arr) => match Rc::try_unwrap(arr) {
+                Ok(inner) => Value::Array(Rc::new(RefCell::new(inner.into_inner()))),
+                Err(rc) => {
+                    let cloned_vec: Vec<Value> =
+                        rc.borrow().iter().map(|v| v.deep_clone()).collect();
+                    Value::from(cloned_vec)
+                }
+            },
+        }
+    }
+
     pub fn deep_clone(&self) -> Self {
         match self {
             Value::None => Value::None,
@@ -35,8 +52,8 @@ impl Value {
             Value::Bool(b) => Value::Bool(*b),
             // Value::String(s) => Value::String(s.clone()),
             Value::Array(arr) => {
-                let cloned_vec = arr.borrow().iter().map(|v| v.deep_clone()).collect();
-                Value::Array(Rc::new(RefCell::new(cloned_vec)))
+                let cloned_vec: Vec<Value> = arr.borrow().iter().map(|v| v.deep_clone()).collect();
+                Value::from(cloned_vec)
             }
         }
     }
@@ -93,26 +110,58 @@ pub enum InstructionGeneric<Target> {
     FunctionHeader {
         parameter_count: usize,
     },
+
+    // out: pushed value
     Push(PushSource),
+
+    // in: popped value
     Pop(PopDestination),
+
+    // in: lhs, rhs
+    // out: result
     Binary {
         op: BinaryOperator,
     },
+
+    // in: value
+    // out: result
     Unary(UnaryOperator),
+
+    // in: len
+    // out: array of length len
+    ArrayBuild,
+
+    // in: values...
+    // out: array literal
+    ArrayLiteral {
+        length: usize,
+    },
+
+    // in: array, index
+    // out: value at array[index]
     ArrayIndex,
+
+    // in: array, [start], [end]
+    // out: sub-array array[start:end]
     ArraySlice {
         has_start: bool,
         has_end: bool,
     },
-    // The same as a jump but it pushes a new environment frame to the procedure stack (which is separate from the instruction stack)
+
+    // in: arg_count arguments
+    // out: return value of the function
     FunctionCall {
         target: Target,
         arg_count: usize,
     },
+
+    // in: [condition]
     Jump {
         is_conditional: bool,
         target: Target,
     },
+
+    // in: return value
     Return,
 }
 
@@ -187,10 +236,10 @@ impl InstructionGenerationContext {
         } = self;
 
         let finalize_single_instruction = move |instr| match instr {
-            InstructionGeneric::Jump {
+            InstructionRelative::Jump {
                 is_conditional,
                 target,
-            } => InstructionGeneric::Jump {
+            } => Instruction::Jump {
                 is_conditional,
                 target: match target {
                     RelativeTarget::Label(label) => *labels
@@ -199,31 +248,31 @@ impl InstructionGenerationContext {
                     RelativeTarget::Index(index) => index,
                 },
             },
-            InstructionGeneric::FunctionCall { target, arg_count } => {
-                InstructionGeneric::FunctionCall {
-                    target: match target {
-                        RelativeTarget::Label(label) => *labels
-                            .get(&label)
-                            .expect("Unresolved label during finalization"),
-                        RelativeTarget::Index(index) => index,
-                    },
-                    arg_count,
-                }
-            }
-            InstructionGeneric::FunctionHeader {
+            InstructionRelative::FunctionCall { target, arg_count } => Instruction::FunctionCall {
+                target: match target {
+                    RelativeTarget::Label(label) => *labels
+                        .get(&label)
+                        .expect("Unresolved label during finalization"),
+                    RelativeTarget::Index(index) => index,
+                },
+                arg_count,
+            },
+            InstructionRelative::FunctionHeader {
                 parameter_count: parameters,
-            } => InstructionGeneric::FunctionHeader {
+            } => Instruction::FunctionHeader {
                 parameter_count: parameters,
             },
-            InstructionGeneric::Push(push_source) => InstructionGeneric::Push(push_source),
-            InstructionGeneric::Pop(pop_destination) => InstructionGeneric::Pop(pop_destination),
-            InstructionGeneric::Binary { op } => InstructionGeneric::Binary { op },
-            InstructionGeneric::ArrayIndex => InstructionGeneric::ArrayIndex,
-            InstructionGeneric::ArraySlice { has_start, has_end } => {
-                InstructionGeneric::ArraySlice { has_start, has_end }
+            InstructionRelative::Push(push_source) => Instruction::Push(push_source),
+            InstructionRelative::Pop(pop_destination) => Instruction::Pop(pop_destination),
+            InstructionRelative::Binary { op } => Instruction::Binary { op },
+            InstructionRelative::ArrayBuild => Instruction::ArrayBuild,
+            InstructionRelative::ArrayLiteral { length } => Instruction::ArrayLiteral { length },
+            InstructionRelative::ArrayIndex => Instruction::ArrayIndex,
+            InstructionRelative::ArraySlice { has_start, has_end } => {
+                Instruction::ArraySlice { has_start, has_end }
             }
-            InstructionGeneric::Unary(unary_operator) => InstructionGeneric::Unary(unary_operator),
-            InstructionGeneric::Return => InstructionGeneric::Return,
+            InstructionRelative::Unary(unary_operator) => Instruction::Unary(unary_operator),
+            InstructionRelative::Return => Instruction::Return,
         };
 
         instructions
@@ -257,6 +306,21 @@ impl GenerateInstructions for Spanned<Expr<'_>> {
                 context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(
                     PushSource::Literal(Value::Bool(*b)),
                 )));
+            }
+            Expr::Build(expr) => {
+                context.push(&**expr);
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::ArrayBuild));
+            }
+            Expr::ArrayLiteral(elements) => {
+                // Pushed in reverse, so that they can just be popped straight into the array in order.
+                for element in elements.iter().rev() {
+                    context.push(element);
+                }
+                context.push_instruction(self.span.make_wrapped(
+                    InstructionRelative::ArrayLiteral {
+                        length: elements.len(),
+                    },
+                ));
             }
             Expr::VariableAccess(name) => {
                 context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(

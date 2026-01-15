@@ -117,6 +117,13 @@ pub fn parse_pseudocode_program<
             .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
             .map(|span: Spanned<Expr>| span.inner);
 
+        let array_literal = expr
+            .clone()
+            .separated_by(just(Token::Comma))
+            .collect::<Vec<_>>()
+            .delimited_by(just(Token::LSquareBracket), just(Token::RSquareBracket))
+            .map(Expr::ArrayLiteral);
+
         let function_call = select! { token::Token::Identifier(name) => name }
             .spanned()
             .then(
@@ -126,13 +133,28 @@ pub fn parse_pseudocode_program<
                     .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
                     .spanned(),
             )
-            .map(|(name, args)| Expr::FunctionCall {
-                left: name,
-                arguments: args,
-            });
+            .try_map(
+                |(name, args): (Spanned<&str>, Spanned<Vec<Spanned<Expr>>>), _| Ok(match name.inner {
+                    "build" => {
+                        if args.inner.len() != 1 {
+                            // TODO: Any way to return more detailed info rather than just a string?
+                            return Err(chumsky::error::Rich::custom(
+                                args.span,
+                                "build() takes exactly one argument",
+                            ));
+                        }
+                        Expr::Build(Box::new(args.inner[0].clone()))
+                    }
+                    _ => Expr::FunctionCall {
+                        left: name,
+                        arguments: args,
+                    },
+                })
+            );
 
         let atom = choice((
             paren_expr.spanned(),
+            array_literal.spanned(),
             function_call.spanned(),
             value.spanned(),
         ));
@@ -376,7 +398,11 @@ pub fn parse_pseudocode_program<
         .spanned()
         .repeated()
         .collect::<Vec<_>>()
-        .then(just([Token::Algorithm, Token::Colon, Token::Newline]).ignore_then(indented_block).spanned())
+        .then(
+            just([Token::Algorithm, Token::Colon, Token::Newline])
+                .ignore_then(indented_block)
+                .spanned(),
+        )
         .map(|(procedures, statements)| AstRoot {
             procedures,
             main_algorithm: statements,

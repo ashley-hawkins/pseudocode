@@ -38,45 +38,59 @@ fn binary_operation(
     op: &crate::expr::BinaryOperator,
 ) -> Value {
     match op {
-        crate::expr::BinaryOperator::Add => {
-            Value::Number(lhs.inner.ensure_number().expect("Expected number") + rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Sub => {
-            Value::Number(lhs.inner.ensure_number().expect("Expected number") - rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Mul => {
-            Value::Number(lhs.inner.ensure_number().expect("Expected number") * rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Div => {
-            Value::Number(lhs.inner.ensure_number().expect("Expected number") / rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Lt => {
-            Value::Bool(lhs.inner.ensure_number().expect("Expected number") < rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Gt => {
-            Value::Bool(lhs.inner.ensure_number().expect("Expected number") > rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Lte => {
-            Value::Bool(lhs.inner.ensure_number().expect("Expected number") <= rhs.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::BinaryOperator::Gte => {
-            Value::Bool(lhs.inner.ensure_number().expect("Expected number") >= rhs.inner.ensure_number().expect("Expected number"))
-        }
+        crate::expr::BinaryOperator::Add => Value::Number(
+            lhs.inner.ensure_number().expect("Expected number")
+                + rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Sub => Value::Number(
+            lhs.inner.ensure_number().expect("Expected number")
+                - rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Mul => Value::Number(
+            lhs.inner.ensure_number().expect("Expected number")
+                * rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Div => Value::Number(
+            lhs.inner.ensure_number().expect("Expected number")
+                / rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Lt => Value::Bool(
+            lhs.inner.ensure_number().expect("Expected number")
+                < rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Gt => Value::Bool(
+            lhs.inner.ensure_number().expect("Expected number")
+                > rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Lte => Value::Bool(
+            lhs.inner.ensure_number().expect("Expected number")
+                <= rhs.inner.ensure_number().expect("Expected number"),
+        ),
+        crate::expr::BinaryOperator::Gte => Value::Bool(
+            lhs.inner.ensure_number().expect("Expected number")
+                >= rhs.inner.ensure_number().expect("Expected number"),
+        ),
         crate::expr::BinaryOperator::Eq => Value::Bool(lhs.inner == rhs.inner),
         crate::expr::BinaryOperator::Neq => Value::Bool(lhs.inner != rhs.inner),
-        crate::expr::BinaryOperator::And => {
-            Value::Bool(lhs.inner.ensure_bool().expect("Expected bool") && rhs.inner.ensure_bool().expect("Expected bool"))
-        }
-        crate::expr::BinaryOperator::Or => {
-            Value::Bool(lhs.inner.ensure_bool().expect("Expected bool") || rhs.inner.ensure_bool().expect("Expected bool"))
-        }
+        crate::expr::BinaryOperator::And => Value::Bool(
+            lhs.inner.ensure_bool().expect("Expected bool")
+                && rhs.inner.ensure_bool().expect("Expected bool"),
+        ),
+        crate::expr::BinaryOperator::Or => Value::Bool(
+            lhs.inner.ensure_bool().expect("Expected bool")
+                || rhs.inner.ensure_bool().expect("Expected bool"),
+        ),
     }
 }
 
 fn unary_operation(operand: Spanned<Value>, op: &crate::expr::UnaryOperator) -> Value {
     match op {
-        crate::expr::UnaryOperator::Neg => Value::Number(-operand.inner.ensure_number().expect("Expected number")),
-        crate::expr::UnaryOperator::Not => Value::Bool(!operand.inner.ensure_bool().expect("Expected bool")),
+        crate::expr::UnaryOperator::Neg => {
+            Value::Number(-operand.inner.ensure_number().expect("Expected number"))
+        }
+        crate::expr::UnaryOperator::Not => {
+            Value::Bool(!operand.inner.ensure_bool().expect("Expected bool"))
+        }
     }
 }
 
@@ -197,6 +211,27 @@ impl<'prog> InterpreterState<'prog> {
                 // todo: have a span for the operand
                 let res = self.unary_operation(unary_operator);
                 self.push_value(instruction.span.make_wrapped(res));
+            }
+            Instruction::ArrayBuild => {
+                let array_size = self.pop_value().ensure_int().unwrap() as usize;
+                let mut elements = Vec::with_capacity(array_size);
+
+                for _ in 0..array_size {
+                    elements.push(Value::Number(0.0));
+                }
+
+                self.push_value(instruction.span.make_wrapped(Value::from(elements)));
+            }
+            Instruction::ArrayLiteral { length } => {
+                let array_length = *length;
+
+                let mut elements = Vec::with_capacity(array_length);
+
+                for _ in 0..array_length {
+                    elements.push(self.pop_value().inner.move_or_deep_clone());
+                }
+
+                self.push_value(instruction.span.make_wrapped(Value::from(elements)));
             }
             Instruction::ArrayIndex => {
                 let index = self.pop_value().ensure_int().unwrap() as usize;
