@@ -426,6 +426,11 @@ impl GenerateInstructions for Spanned<WhileStatement<'_>> {
         let start_pos = context.next_instruction_index();
 
         context.push(&self.inner.condition);
+        context.push_instruction(
+            self.span
+                .make_wrapped(InstructionRelative::Unary(UnaryOperator::Not)),
+        );
+
         let jump_placeholder_pos = context.push_placeholder();
 
         context.push(&self.inner.body);
@@ -448,6 +453,10 @@ impl GenerateInstructions for Spanned<WhileStatement<'_>> {
 impl GenerateInstructions for Spanned<IfStatement<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         context.push(&self.inner.condition);
+        context.push_instruction(
+            self.span
+                .make_wrapped(InstructionRelative::Unary(UnaryOperator::Not)),
+        );
         // Initial jump, jumps to wherever we need to be when the condition is false.
         // So that's the end if there's no else, or the beginning of the else block if there is one.
         let initial_jump_placeholder_pos = context.push_placeholder();
@@ -488,14 +497,23 @@ impl GenerateInstructions for Spanned<ProcedureDefinition<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         context.set_next_label(Label::Function(self.inner.name.inner.to_owned()));
 
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::FunctionHeader {
-            parameters: self
-                .inner
-                .parameters
-                .iter()
-                .map(|param| param.inner.to_owned())
-                .collect(),
-        }));
+        context.push_instruction(
+            self.span.make_wrapped(InstructionRelative::FunctionHeader {
+                parameters: self
+                    .inner
+                    .parameters
+                    .iter()
+                    .map(|param| param.inner.to_owned())
+                    .collect(),
+            }),
+        );
+
+        // Pop in reverse of the order that the args are pushed.
+        for param in self.inner.parameters.inner.iter().rev() {
+            context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
+                PopDestination::Environment(param.inner.to_owned()),
+            )));
+        }
 
         context.push(&self.inner.body);
     }
