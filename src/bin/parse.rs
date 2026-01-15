@@ -5,7 +5,9 @@ use ariadne::{Color, Label, Report, ReportKind, sources};
 use chumsky::error::RichReason;
 use clap::Parser;
 use pseudocode::{
-    instruction::generate_instructions_for_ast, type_checker::{ValidateTypes, process_type_errors}, util::SourceSpan
+    instruction::generate_instructions_for_ast,
+    type_checker::{ValidateTypes, process_type_errors},
+    util::SourceSpan,
 };
 
 /// Simple CLI: read a file and parse it, reporting parse errors with ariadne.
@@ -40,7 +42,12 @@ fn main() {
             std::process::exit(1);
         }
 
-        println!("{:?}", generate_instructions_for_ast(ast));
+        let program = generate_instructions_for_ast(ast);
+        println!("{:#?}", program.into_iter().enumerate().collect::<Vec<_>>());
+        println!(
+            "{:#?}",
+            pseudocode::interpreter::run_program(&generate_instructions_for_ast(ast))
+        );
     } else {
         // Use the debug representation of the parse result as a message and
         // print it with ariadne over the whole source range.

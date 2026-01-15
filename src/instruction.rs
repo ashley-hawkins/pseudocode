@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use chumsky::span::{Span, WrappingSpan};
 
 use crate::{
@@ -11,11 +13,54 @@ use crate::{
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Value {
+    None,
     Number(f64),
     Bool(bool),
-    String(String),
-    // TODO: functions as values, maybe
-    // Function(FunctionMetadata),
+    // String(String),
+    Array(Rc<RefCell<Vec<Value>>>),
+}
+
+impl From<Vec<Value>> for Value {
+    fn from(vec: Vec<Value>) -> Self {
+        Value::Array(Rc::new(RefCell::new(vec)))
+    }
+}
+
+impl Value {
+    // This should be used when popping a value into the environment
+    pub fn deep_clone(&self) -> Self {
+        match self {
+            Value::None => Value::None,
+            Value::Number(n) => Value::Number(*n),
+            Value::Bool(b) => Value::Bool(*b),
+            // Value::String(s) => Value::String(s.clone()),
+            Value::Array(arr) => {
+                let cloned_vec = arr.borrow().iter().map(|v| v.deep_clone()).collect();
+                Value::Array(Rc::new(RefCell::new(cloned_vec)))
+            }
+        }
+    }
+
+    pub fn ensure_int(&self) -> Option<i64> {
+        match self {
+            Value::Number(n) if n.fract() == 0.0 => Some(*n as i64),
+            _ => None,
+        }
+    }
+
+    pub fn ensure_number(&self) -> Option<f64> {
+        match self {
+            Value::Number(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    pub fn ensure_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -52,15 +97,13 @@ pub enum InstructionGeneric<Target> {
     Pop(PopDestination),
     Binary {
         op: BinaryOperator,
-        lhs_span: SourceSpan,
-        rhs_span: SourceSpan,
     },
+    Unary(UnaryOperator),
     ArrayIndex,
     ArraySlice {
         has_start: bool,
         has_end: bool,
     },
-    Unary(UnaryOperator),
     // The same as a jump but it pushes a new environment frame to the procedure stack (which is separate from the instruction stack)
     FunctionCall {
         target: Target,
@@ -70,9 +113,7 @@ pub enum InstructionGeneric<Target> {
         is_conditional: bool,
         target: Target,
     },
-    Return {
-        with_value: bool,
-    },
+    Return,
 }
 
 // Uses labels to reference instructions as the labels are only during the second pass.
@@ -169,26 +210,20 @@ impl InstructionGenerationContext {
                     arg_count,
                 }
             }
-            InstructionGeneric::FunctionHeader { parameter_count: parameters } => {
-                InstructionGeneric::FunctionHeader { parameter_count: parameters }
-            }
+            InstructionGeneric::FunctionHeader {
+                parameter_count: parameters,
+            } => InstructionGeneric::FunctionHeader {
+                parameter_count: parameters,
+            },
             InstructionGeneric::Push(push_source) => InstructionGeneric::Push(push_source),
             InstructionGeneric::Pop(pop_destination) => InstructionGeneric::Pop(pop_destination),
-            InstructionGeneric::Binary {
-                op,
-                lhs_span,
-                rhs_span,
-            } => InstructionGeneric::Binary {
-                op,
-                lhs_span,
-                rhs_span,
-            },
+            InstructionGeneric::Binary { op } => InstructionGeneric::Binary { op },
             InstructionGeneric::ArrayIndex => InstructionGeneric::ArrayIndex,
             InstructionGeneric::ArraySlice { has_start, has_end } => {
                 InstructionGeneric::ArraySlice { has_start, has_end }
             }
             InstructionGeneric::Unary(unary_operator) => InstructionGeneric::Unary(unary_operator),
-            InstructionGeneric::Return { with_value } => InstructionGeneric::Return { with_value },
+            InstructionGeneric::Return => InstructionGeneric::Return,
         };
 
         instructions
@@ -272,11 +307,10 @@ impl GenerateInstructions for Spanned<Expr<'_>> {
             Expr::BinaryOp { left, op, right } => {
                 context.push(&**left);
                 context.push(&**right);
-                context.push_instruction(self.span.make_wrapped(InstructionRelative::Binary {
-                    op: op.inner,
-                    lhs_span: left.span,
-                    rhs_span: right.span,
-                }));
+                context.push_instruction(
+                    self.span
+                        .make_wrapped(InstructionRelative::Binary { op: op.inner }),
+                );
             }
             Expr::UnaryOp { op, expr } => {
                 context.push(&**expr);
@@ -359,16 +393,13 @@ impl GenerateInstructions for Spanned<ReturnStatement<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         if let Some(expr) = &self.inner.expr {
             context.push(expr);
-            context.push_instruction(
-                self.span
-                    .make_wrapped(InstructionRelative::Return { with_value: true }),
-            );
         } else {
             context.push_instruction(
                 self.span
-                    .make_wrapped(InstructionRelative::Return { with_value: false }),
+                    .make_wrapped(InstructionRelative::Push(PushSource::Literal(Value::None))),
             );
         }
+        context.push_instruction(self.span.make_wrapped(InstructionRelative::Return));
     }
 }
 
@@ -497,11 +528,9 @@ impl GenerateInstructions for Spanned<ProcedureDefinition<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         context.set_next_label(Label::Function(self.inner.name.inner.to_owned()));
 
-        context.push_instruction(
-            self.span.make_wrapped(InstructionRelative::FunctionHeader {
-                parameter_count: self.inner.parameters.inner.len(),
-            }),
-        );
+        context.push_instruction(self.span.make_wrapped(InstructionRelative::FunctionHeader {
+            parameter_count: self.inner.parameters.inner.len(),
+        }));
 
         // Pop in reverse of the order that the args are pushed.
         for param in self.inner.parameters.inner.iter().rev() {
