@@ -46,7 +46,7 @@ pub enum PushSource {
 pub enum InstructionGeneric<Target> {
     // Special "instruction" that marks the beginning of a function. This is used to validate the parameter list during FunctionCall instructions.
     FunctionHeader {
-        parameters: Vec<String>,
+        parameter_count: usize,
     },
     Push(PushSource),
     Pop(PopDestination),
@@ -169,8 +169,8 @@ impl InstructionGenerationContext {
                     arg_count,
                 }
             }
-            InstructionGeneric::FunctionHeader { parameters } => {
-                InstructionGeneric::FunctionHeader { parameters }
+            InstructionGeneric::FunctionHeader { parameter_count: parameters } => {
+                InstructionGeneric::FunctionHeader { parameter_count: parameters }
             }
             InstructionGeneric::Push(push_source) => InstructionGeneric::Push(push_source),
             InstructionGeneric::Pop(pop_destination) => InstructionGeneric::Pop(pop_destination),
@@ -499,18 +499,13 @@ impl GenerateInstructions for Spanned<ProcedureDefinition<'_>> {
 
         context.push_instruction(
             self.span.make_wrapped(InstructionRelative::FunctionHeader {
-                parameters: self
-                    .inner
-                    .parameters
-                    .iter()
-                    .map(|param| param.inner.to_owned())
-                    .collect(),
+                parameter_count: self.inner.parameters.inner.len(),
             }),
         );
 
         // Pop in reverse of the order that the args are pushed.
         for param in self.inner.parameters.inner.iter().rev() {
-            context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
+            context.push_instruction(param.span.make_wrapped(InstructionRelative::Pop(
                 PopDestination::Environment(param.inner.to_owned()),
             )));
         }
