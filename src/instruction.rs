@@ -8,7 +8,7 @@ use crate::{
         AssignmentStatement, AstRoot, Block, ForStatement, GotoStatement, IfStatement,
         ProcedureDefinition, ReturnStatement, Statement, SwapStatement, WhileStatement,
     },
-    util::{SourceSpan, Spanned},
+    util::Spanned,
 };
 
 #[derive(Clone, PartialEq, Debug)]

@@ -134,22 +134,24 @@ pub fn parse_pseudocode_program<
                     .spanned(),
             )
             .try_map(
-                |(name, args): (Spanned<&str>, Spanned<Vec<Spanned<Expr>>>), _| Ok(match name.inner {
-                    "build" => {
-                        if args.inner.len() != 1 {
-                            // TODO: Any way to return more detailed info rather than just a string?
-                            return Err(chumsky::error::Rich::custom(
-                                args.span,
-                                "build() takes exactly one argument",
-                            ));
+                |(name, args): (Spanned<&str>, Spanned<Vec<Spanned<Expr>>>), _| {
+                    Ok(match name.inner {
+                        "build" => {
+                            if args.inner.len() != 1 {
+                                // TODO: Any way to return more detailed info rather than just a string?
+                                return Err(chumsky::error::Rich::custom(
+                                    args.span,
+                                    "build() takes exactly one argument",
+                                ));
+                            }
+                            Expr::Build(Box::new(args.inner[0].clone()))
                         }
-                        Expr::Build(Box::new(args.inner[0].clone()))
-                    }
-                    _ => Expr::FunctionCall {
-                        left: name,
-                        arguments: args,
-                    },
-                })
+                        _ => Expr::FunctionCall {
+                            left: name,
+                            arguments: args,
+                        },
+                    })
+                },
             );
 
         let atom = choice((
