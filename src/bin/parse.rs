@@ -57,7 +57,7 @@ fn main() {
                 if span.is_eof() {
                     src.len()..src.len()
                 } else {
-                    span.start.bytes + 1..span.end.bytes
+                    span.start.bytes..span.end.bytes
                 }
             };
 
