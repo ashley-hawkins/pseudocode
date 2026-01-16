@@ -11,7 +11,7 @@ use crate::{
         IfStatement, ReturnStatement, Statement, SwapStatement, WhileStatement,
     },
     type_checker::Type,
-    util::Spanned,
+    util::{SourceSpan, Spanned},
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -315,6 +315,10 @@ impl InstructionGenerationContext {
         self.next_label = Some(label);
     }
 
+    fn set_next_label_from_span(&mut self, span: &SourceSpan) {
+        self.set_next_label(Label::Line(span.start.line + 1));
+    }
+
     fn push_placeholder(&mut self) -> usize {
         let offset = self.next_instruction_index();
         self.instructions
@@ -422,7 +426,7 @@ trait GenerateInstructions {
 
 impl GenerateInstructions for Spanned<Expr<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
-        context.set_next_label(Label::Line(self.span.start.line));
+        context.set_next_label_from_span(&self.span);
         match &self.inner {
             Expr::NumberLiteral(n) => {
                 context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(
