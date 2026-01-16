@@ -5,10 +5,10 @@ use chumsky::span::{Span, WrappingSpan};
 use crate::{
     expr::{BinaryOperator, Expr, UnaryOperator},
     interpreter::RuntimeError,
-    parser::{
-        AssignmentLhs, AssignmentStatement, AstRoot, Block, DebugStatement, ForStatement,
-        GotoStatement, IfStatement, ProcedureDefinition, ReturnStatement, Statement, SwapStatement,
-        WhileStatement,
+    parser::{AstRoot, ProcedureDefinition},
+    statement::{
+        AssignmentLhs, AssignmentStatement, Block, DebugStatement, ForStatement, GotoStatement,
+        IfStatement, ReturnStatement, Statement, SwapStatement, WhileStatement,
     },
     type_checker::Type,
     util::Spanned,
@@ -534,16 +534,16 @@ impl GenerateInstructions for Spanned<Statement<'_>> {
                 let sources = args
                     .iter()
                     .map(|arg| match arg {
-                        crate::parser::DebugArgument::String(str) => {
+                        crate::statement::DebugArgument::String(str) => {
                             DebugArgSource::StringLiteral((*str).to_owned())
                         }
-                        crate::parser::DebugArgument::Expr(_) => DebugArgSource::Stack,
+                        crate::statement::DebugArgument::Expr(_) => DebugArgSource::Stack,
                     })
                     .collect::<Vec<_>>();
 
                 for expr in args.iter().rev().filter_map(|arg| match arg {
-                    crate::parser::DebugArgument::String(_) => None,
-                    crate::parser::DebugArgument::Expr(expr) => Some(expr),
+                    crate::statement::DebugArgument::String(_) => None,
+                    crate::statement::DebugArgument::Expr(expr) => Some(expr),
                 }) {
                     context.push(expr)
                 }
@@ -648,13 +648,13 @@ impl GenerateInstructions for Spanned<SwapStatement<'_>> {
 impl GenerateInstructions for Spanned<AssignmentStatement<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         match &self.inner.lhs {
-            crate::parser::AssignmentLhs::Variable(identifier) => {
+            crate::statement::AssignmentLhs::Variable(identifier) => {
                 context.push(&self.inner.expression);
                 context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
                     PopDestination::Environment(identifier.inner.to_owned()),
                 )));
             }
-            crate::parser::AssignmentLhs::ArrayAccess { left, right } => {
+            crate::statement::AssignmentLhs::ArrayAccess { left, right } => {
                 context.push(&**left);
                 context.push(&**right);
                 context.push(&self.inner.expression);

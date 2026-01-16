@@ -4,12 +4,13 @@ use ariadne::{Color, Label, Report, ReportKind, sources};
 use chumsky::span::WrappingSpan;
 
 use crate::expr::{ArrayIndex, BinaryOperator, Expr, UnaryOperator};
+use crate::statement::{
+    AssignmentStatement, Block, ForStatement, GotoStatement, IfStatement, ReturnStatement,
+    Statement, SwapStatement, WhileStatement,
+};
 use crate::util::{SourceSpan, Spanned};
 
-use crate::parser::{
-    AssignmentStatement, AstRoot, Block, ForStatement, GotoStatement, IfStatement,
-    ProcedureDefinition, ReturnStatement, Statement, SwapStatement, WhileStatement,
-};
+use crate::parser::{AstRoot, ProcedureDefinition};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Type {
@@ -272,7 +273,7 @@ impl<'a> ValidateTypes<'a> for Spanned<Statement<'a>> {
                 .validate_types_into(errs),
             Statement::Debug(stmt) => {
                 for expr in &stmt.args {
-                    if let crate::parser::DebugArgument::Expr(e) = expr {
+                    if let crate::statement::DebugArgument::Expr(e) = expr {
                         self.span.make_wrapped(e.clone()).validate_types_into(errs);
                     }
                 }
