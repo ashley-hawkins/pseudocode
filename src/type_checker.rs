@@ -117,6 +117,12 @@ fn result_type_inner<'a>(
                     result_type_inner(right, Some((left_type, expr.clone().into())), errs);
                 Type::Boolean
             }
+            BinaryOperator::IsIn => {
+                let _left_type = result_type_inner(left, None, errs);
+                let _right_type =
+                    result_type_inner(right, Some((Type::Array, expr.clone().into())), errs);
+                Type::Boolean
+            }
         },
         Expr::VariableAccess(_) => Type::Dynamic,
         Expr::ArrayAccess { left, right } => {
@@ -168,6 +174,19 @@ fn result_type_inner<'a>(
             UnaryOperator::Not => {
                 let _expr_type =
                     result_type_inner(expr, Some((Type::Boolean, (**expr).clone().into())), errs);
+                Type::Boolean
+            }
+            UnaryOperator::IsAscending
+            | UnaryOperator::IsStrictlyAscending
+            | UnaryOperator::IsDescending
+            | UnaryOperator::IsStrictlyDescending => {
+                let _expr_type =
+                    result_type_inner(expr, Some((Type::Array, (**expr).clone().into())), errs);
+                Type::Boolean
+            }
+            UnaryOperator::IsEven | UnaryOperator::IsOdd => {
+                let _expr_type =
+                    result_type_inner(expr, Some((Type::Number, (**expr).clone().into())), errs);
                 Type::Boolean
             }
         },
@@ -262,8 +281,12 @@ impl<'a> ValidateTypes<'a> for Spanned<Statement<'a>> {
                 .span
                 .make_wrapped(stmt.clone())
                 .validate_types_into(errs),
-
             Statement::DebugStack => {}
+            Statement::Assert(assert_statement) => {
+                self.span
+                    .make_wrapped(assert_statement.condition.clone())
+                    .validate_types_into(errs);
+            }
         }
     }
 }

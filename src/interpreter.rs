@@ -10,6 +10,7 @@ use crate::{
 
 pub struct Environment(HashMap<String, Value>);
 
+#[derive(Debug)]
 pub enum RuntimeError {
     TypeError {
         expected: Type,
@@ -68,6 +69,14 @@ fn binary_operation(
         crate::expr::BinaryOperator::Neq => Value::Bool(lhs.inner != rhs.inner),
         crate::expr::BinaryOperator::And => Value::Bool(lhs.ensure_bool()? && rhs.ensure_bool()?),
         crate::expr::BinaryOperator::Or => Value::Bool(lhs.ensure_bool()? || rhs.ensure_bool()?),
+
+        crate::expr::BinaryOperator::IsIn => {
+            let element = lhs.inner;
+            let array = rhs.ensure_array()?;
+            let array_ref = array.borrow();
+
+            Value::Bool(array_ref.contains(&element))
+        }
     })
 }
 
@@ -75,9 +84,46 @@ fn unary_operation(
     operand: Spanned<Value>,
     op: &crate::expr::UnaryOperator,
 ) -> Result<Value, RuntimeError> {
+    let array_window_cmp = |cmp: fn(&f64, &f64) -> bool| -> Result<bool, RuntimeError> {
+        Ok(operand
+            .clone()
+            .ensure_array_of(Type::Number)?
+            .borrow()
+            .windows(2)
+            .all(|w| {
+                let lhs = operand
+                    .span
+                    .make_wrapped(w[0].clone())
+                    .ensure_number()
+                    .unwrap();
+                let rhs = operand
+                    .span
+                    .make_wrapped(w[1].clone())
+                    .ensure_number()
+                    .unwrap();
+
+                cmp(&lhs, &rhs)
+            }))
+    };
+
     Ok(match op {
         crate::expr::UnaryOperator::Neg => Value::Number(-operand.ensure_number()?),
         crate::expr::UnaryOperator::Not => Value::Bool(!operand.ensure_bool()?),
+
+        crate::expr::UnaryOperator::IsAscending => Value::Bool(array_window_cmp(|a, b| a <= b)?),
+        crate::expr::UnaryOperator::IsStrictlyAscending => {
+            Value::Bool(array_window_cmp(|a, b| a < b)?)
+        }
+        crate::expr::UnaryOperator::IsDescending => Value::Bool(array_window_cmp(|a, b| a >= b)?),
+        crate::expr::UnaryOperator::IsStrictlyDescending => {
+            Value::Bool(array_window_cmp(|a, b| a > b)?)
+        }
+        crate::expr::UnaryOperator::IsEven => {
+            Value::Bool(operand.clone().ensure_number()? % 2.0 == 0.0)
+        }
+        crate::expr::UnaryOperator::IsOdd => {
+            Value::Bool(operand.clone().ensure_number()? % 2.0 != 0.0)
+        }
     })
 }
 
@@ -313,6 +359,13 @@ impl InterpreterState {
                     println!("{}: {}", i, val.inner);
                 }
                 println!("------------------");
+            }
+            crate::instruction::InstructionGeneric::Assert => {
+                let condition = self.pop_value().ensure_bool()?;
+                if !condition {
+                    // todo: return runtime error instead of panicking
+                    panic!("Assertion failed");
+                }
             }
             Instruction::FunctionHeader { .. } => {
                 panic!("Function header encountered during normal execution")

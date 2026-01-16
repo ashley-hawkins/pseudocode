@@ -126,12 +126,6 @@ enum LexerToken<'a> {
     Is,
     #[token("in")]
     In,
-    #[token("strictly")]
-    Strictly,
-    #[token("ascending")]
-    Ascending,
-    #[token("descending")]
-    Descending,
     //   Control flow
     #[regex("[Pp]rocedure")]
     Procedure,
@@ -405,9 +399,6 @@ fn into_final_tokens<'src>(
                     LexerToken::Assert => Token::Assert,
                     LexerToken::Is => Token::Is,
                     LexerToken::In => Token::In,
-                    LexerToken::Strictly => Token::Strictly,
-                    LexerToken::Ascending => Token::Ascending,
-                    LexerToken::Descending => Token::Descending,
                     LexerToken::Procedure => Token::Procedure,
                     LexerToken::Algorithm => Token::Algorithm,
                     LexerToken::For => Token::For,

@@ -100,6 +100,7 @@ pub trait EnsureType {
     fn ensure_int(self) -> Result<i64, RuntimeError>;
     fn ensure_bool(self) -> Result<bool, RuntimeError>;
     fn ensure_array(self) -> Result<Rc<RefCell<Vec<Value>>>, RuntimeError>;
+    fn ensure_array_of(self, element_type: Type) -> Result<Rc<RefCell<Vec<Value>>>, RuntimeError>;
 }
 
 impl EnsureType for Spanned<Value> {
@@ -143,6 +144,32 @@ impl EnsureType for Spanned<Value> {
         let Self { inner, span } = self;
         match inner {
             Value::Array(arr) => Ok(arr),
+            _ => Err(RuntimeError::TypeError {
+                expected: Type::Array,
+                found: inner.get_type(),
+                span,
+            }),
+        }
+    }
+
+    fn ensure_array_of(self, element_type: Type) -> Result<Rc<RefCell<Vec<Value>>>, RuntimeError> {
+        let Self { inner, span } = self;
+        match inner {
+            Value::Array(arr) => {
+                for v in arr.borrow().iter() {
+                    let val_type = v.get_type();
+                    if val_type != element_type
+                        && !(element_type == Type::Number && val_type == Type::Integer)
+                    {
+                        return Err(RuntimeError::TypeError {
+                            expected: element_type,
+                            found: v.get_type(),
+                            span,
+                        });
+                    }
+                }
+                Ok(arr)
+            }
             _ => Err(RuntimeError::TypeError {
                 expected: Type::Array,
                 found: inner.get_type(),
@@ -254,6 +281,8 @@ pub enum InstructionGeneric<Target> {
     },
 
     DebugStack,
+
+    Assert,
 }
 
 // Uses labels to reference instructions as the labels are only during the second pass.
@@ -370,6 +399,7 @@ impl InstructionGenerationContext {
                 arg_sources,
             },
             InstructionRelative::DebugStack => Instruction::DebugStack,
+            InstructionRelative::Assert => Instruction::Assert,
         };
 
         instructions
@@ -536,6 +566,10 @@ impl GenerateInstructions for Spanned<Statement<'_>> {
                     self.span
                         .make_wrapped(InstructionRelative::Pop(PopDestination::Discard)),
                 );
+            }
+            Statement::Assert(assert_statement) => {
+                context.push(&assert_statement.condition);
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Assert));
             }
         }
     }

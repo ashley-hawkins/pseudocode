@@ -77,8 +77,14 @@ pub enum AssignmentLhs<'a> {
     },
 }
 
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub struct AssertStatement<'a> {
+    pub condition: Spanned<Expr<'a>>,
+}
+
 #[derive(Clone, PartialEq, PartialOrd, Debug, derive_more::From)]
 pub enum Statement<'a> {
+    Assert(AssertStatement<'a>),
     Goto(GotoStatement),
     Swap(SwapStatement<'a>),
     Assignment(AssignmentStatement<'a>),
@@ -236,10 +242,10 @@ pub fn parse_pseudocode_program<
             }
         }
 
-        let or_operation = infix(left(0), just(Token::Or).spanned(), fold_binary_operation);
-        let and_operation = infix(left(1), just(Token::And).spanned(), fold_binary_operation);
+        let or_operation = infix(left(1), just(Token::Or).spanned(), fold_binary_operation);
+        let and_operation = infix(left(2), just(Token::And).spanned(), fold_binary_operation);
         let comparison_operations = infix(
-            left(2),
+            left(3),
             one_of([
                 Token::Lt,
                 Token::Gt,
@@ -252,17 +258,17 @@ pub fn parse_pseudocode_program<
             fold_binary_operation,
         );
         let add_sub_operation = infix(
-            left(3),
+            left(4),
             one_of([Token::Add, Token::Subtract]).spanned(),
             fold_binary_operation,
         );
         let mul_div_operation = infix(
-            left(4),
+            left(5),
             one_of([Token::Multiply, Token::Divide]).spanned(),
             fold_binary_operation,
         );
         let unary_operation = prefix(
-            5,
+            6,
             one_of([Token::Subtract, Token::Not]).spanned(),
             |op: Spanned<Token>, rhs, extra| Spanned {
                 inner: Expr::UnaryOp {
@@ -279,13 +285,115 @@ pub fn parse_pseudocode_program<
                 span: extra.span(),
             },
         );
-        let array_access = postfix(6, array_index, |lhs, rhs, extra| Spanned {
+        let array_access = postfix(7, array_index, |lhs, rhs, extra| Spanned {
             inner: Expr::ArrayAccess {
                 left: Box::new(lhs),
                 right: rhs,
             },
             span: extra.span(),
         });
+
+        let is_ascending = postfix(
+            6,
+            just(Token::Is)
+                .then(just(token::Token::Identifier("ascending")))
+                .map(|_| UnaryOperator::IsAscending)
+                .spanned(),
+            |expr: Spanned<Expr>, op, extra| Spanned {
+                inner: Expr::UnaryOp {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: extra.span(),
+            },
+        );
+        let is_strictly_ascending = postfix(
+            6,
+            just(Token::Is)
+                .then(just(token::Token::Identifier("strictly")))
+                .then(just(token::Token::Identifier("ascending")))
+                .map(|_| UnaryOperator::IsStrictlyAscending)
+                .spanned(),
+            |expr: Spanned<Expr>, op, extra| Spanned {
+                inner: Expr::UnaryOp {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: extra.span(),
+            },
+        );
+        let is_descending = postfix(
+            6,
+            just(Token::Is)
+                .then(just(token::Token::Identifier("descending")))
+                .map(|_| UnaryOperator::IsDescending)
+                .spanned(),
+            |expr: Spanned<Expr>, op, extra| Spanned {
+                inner: Expr::UnaryOp {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: extra.span(),
+            },
+        );
+        let is_strictly_descending = postfix(
+            6,
+            just(Token::Is)
+                .then(just(token::Token::Identifier("strictly")))
+                .then(just(token::Token::Identifier("descending")))
+                .map(|_| UnaryOperator::IsStrictlyDescending)
+                .spanned(),
+            |expr: Spanned<Expr>, op, extra| Spanned {
+                inner: Expr::UnaryOp {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: extra.span(),
+            },
+        );
+        let is_even = postfix(
+            6,
+            just(Token::Is)
+                .then(just(token::Token::Identifier("even")))
+                .map(|_| UnaryOperator::IsEven)
+                .spanned(),
+            |expr: Spanned<Expr>, op, extra| Spanned {
+                inner: Expr::UnaryOp {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: extra.span(),
+            },
+        );
+        let is_odd = postfix(
+            6,
+            just(Token::Is)
+                .then(just(token::Token::Identifier("odd")))
+                .map(|_| UnaryOperator::IsOdd)
+                .spanned(),
+            |expr: Spanned<Expr>, op, extra| Spanned {
+                inner: Expr::UnaryOp {
+                    op,
+                    expr: Box::new(expr),
+                },
+                span: extra.span(),
+            },
+        );
+        let is_in = infix(
+            left(0),
+            just([Token::Is, Token::In]).spanned(),
+            |lhs, op, rhs, extra| Spanned {
+                inner: Expr::BinaryOp {
+                    left: Box::new(lhs),
+                    op: Spanned {
+                        inner: BinaryOperator::IsIn,
+                        span: extra.span(),
+                    },
+                    right: Box::new(rhs),
+                },
+                span: extra.span(),
+            },
+        );
 
         atom.pratt((
             or_operation,
@@ -295,6 +403,13 @@ pub fn parse_pseudocode_program<
             mul_div_operation,
             unary_operation,
             array_access,
+            is_ascending,
+            is_strictly_ascending,
+            is_descending,
+            is_strictly_descending,
+            is_even,
+            is_odd,
+            is_in,
         ))
     });
 
@@ -306,6 +421,11 @@ pub fn parse_pseudocode_program<
             .map(Block);
 
         let indented_block = block.delimited_by(just(Token::Indent), just(Token::Dedent));
+
+        let assert_statement = expr
+            .clone()
+            .delimited_by(just([Token::Assert, Token::Colon]), just(Token::Newline))
+            .map(|condition| Statement::from(AssertStatement { condition }));
 
         let goto_statement = select! {
             token::Token::NumberLiteral(line_num) =>  line_num.parse().unwrap()
@@ -465,11 +585,12 @@ pub fn parse_pseudocode_program<
             .map(|expr_opt| Statement::from(ReturnStatement { expr: expr_opt }));
 
         let common_statement = choice((
-            debug_statement.clone(),
-            return_statement.clone(),
-            if_statement.clone(),
-            assignment_statement.clone(),
-            swap_statement.clone(),
+            assert_statement,
+            debug_statement,
+            return_statement,
+            if_statement,
+            assignment_statement,
+            swap_statement,
             expr.clone()
                 .then_ignore(just(Token::Newline))
                 .map(Statement::BareExpr),

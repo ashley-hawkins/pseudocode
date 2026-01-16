@@ -16,6 +16,8 @@ pub enum BinaryOperator {
     Gte,
     Eq,
     Neq,
+
+    IsIn,
 }
 
 impl std::fmt::Display for BinaryOperator {
@@ -33,6 +35,8 @@ impl std::fmt::Display for BinaryOperator {
             BinaryOperator::Gte => ">=",
             BinaryOperator::Eq => "==",
             BinaryOperator::Neq => "!=",
+
+            BinaryOperator::IsIn => "is in",
         };
         write!(f, "{}", op_str)
     }
@@ -70,6 +74,13 @@ impl<'a> TryFrom<Token<'a>> for BinaryOperator {
 pub enum UnaryOperator {
     Neg,
     Not,
+
+    IsAscending,
+    IsStrictlyAscending,
+    IsDescending,
+    IsStrictlyDescending,
+    IsEven,
+    IsOdd,
 }
 
 impl std::fmt::Display for UnaryOperator {
@@ -77,6 +88,13 @@ impl std::fmt::Display for UnaryOperator {
         let op_str = match self {
             UnaryOperator::Neg => "-",
             UnaryOperator::Not => "not",
+
+            UnaryOperator::IsAscending => "is ascending",
+            UnaryOperator::IsStrictlyAscending => "is strictly ascending",
+            UnaryOperator::IsDescending => "is descending",
+            UnaryOperator::IsStrictlyDescending => "is strictly descending",
+            UnaryOperator::IsEven => "is even",
+            UnaryOperator::IsOdd => "is odd",
         };
         write!(f, "{}", op_str)
     }
