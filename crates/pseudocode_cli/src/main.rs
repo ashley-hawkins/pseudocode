@@ -11,12 +11,22 @@ use pseudocode::{
     util::SourceSpan,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum ParseMode {
+    Jumpy,
+    Structured,
+    Procedural,
+}
+
 /// Simple CLI: read a file and parse it, reporting parse errors with ariadne.
 #[derive(Debug, Parser)]
 #[command(name = "pseudocode-parse")]
 struct Cli {
     /// Input file to parse
     file: PathBuf,
+    /// Parsing mode to use
+    #[arg(short, long, value_enum, default_value_t = ParseMode::Procedural)]
+    mode: ParseMode,
 }
 
 fn main() {
@@ -33,7 +43,14 @@ fn main() {
     let file_name = cli.file.to_string_lossy().into_owned();
 
     // Parse using library parser
-    let result = pseudocode::parser::parse_str(&src, pseudocode::parser::Mode::default());
+    let result = pseudocode::parser::parse_str(
+        &src,
+        match cli.mode {
+            ParseMode::Jumpy => pseudocode::parser::Mode::JumpyImp,
+            ParseMode::Structured => pseudocode::parser::Mode::StructuredImp,
+            ParseMode::Procedural => pseudocode::parser::Mode::ProceduralImp,
+        },
+    );
 
     if let Some(ast) = result.output() {
         println!("{:#?}", ast);
