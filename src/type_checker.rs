@@ -262,6 +262,8 @@ impl<'a> ValidateTypes<'a> for Spanned<Statement<'a>> {
                 .span
                 .make_wrapped(stmt.clone())
                 .validate_types_into(errs),
+
+            Statement::DebugStack => {}
         }
     }
 }

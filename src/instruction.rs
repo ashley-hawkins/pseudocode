@@ -246,6 +246,8 @@ pub enum InstructionGeneric<Target> {
         with_newline: bool,
         arg_sources: Vec<DebugArgSource>,
     },
+
+    DebugStack,
 }
 
 // Uses labels to reference instructions as the labels are only during the second pass.
@@ -363,6 +365,7 @@ impl InstructionGenerationContext {
                 with_newline,
                 arg_sources,
             },
+            InstructionRelative::DebugStack => Instruction::DebugStack,
         };
 
         instructions
@@ -515,6 +518,9 @@ impl GenerateInstructions for Spanned<Statement<'_>> {
                     with_newline: *with_newline,
                     arg_sources: sources,
                 }));
+            }
+            Statement::DebugStack => {
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::DebugStack));
             }
             Statement::BareExpr(expr) => {
                 context.push(expr);

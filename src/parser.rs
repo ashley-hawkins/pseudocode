@@ -79,6 +79,7 @@ pub enum Statement<'a> {
     Return(ReturnStatement<'a>),
     BareExpr(Spanned<Expr<'a>>),
     Debug(DebugStatement<'a>),
+    DebugStack,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -304,27 +305,33 @@ pub fn parse_pseudocode_program<
         .map(|line_number| Statement::from(GotoStatement { line_number }))
         .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
 
-        let debug_statement = one_of([Token::DebugLn, Token::Debug])
-            .spanned()
-            .then(
-                choice((
-                    select! { token::Token::StringLiteral(s) => s }
-                        .map(DebugArgument::String)
-                        .spanned(),
-                    expr.clone().map(DebugArgument::Expr).spanned(),
-                ))
-                .separated_by(just(Token::Comma))
-                .collect::<Vec<_>>(),
-            )
-            .then_ignore(just(Token::Newline))
-            .map(
-                |(token, args): (Spanned<Token>, Vec<Spanned<DebugArgument>>)| {
-                    Statement::from(DebugStatement {
-                        with_newline: matches!(token.inner, Token::DebugLn),
-                        args: args.into_iter().map(|s| s.inner).collect(),
-                    })
-                },
-            );
+        let debug_statement = choice((
+            one_of([Token::DebugLn, Token::Debug])
+                .spanned()
+                .then(
+                    choice((
+                        select! { token::Token::StringLiteral(s) => s }
+                            .map(DebugArgument::String)
+                            .spanned(),
+                        expr.clone().map(DebugArgument::Expr).spanned(),
+                    ))
+                    .separated_by(just(Token::Comma))
+                    .collect::<Vec<_>>(),
+                )
+                .then_ignore(just(Token::Newline))
+                .map(
+                    |(token, args): (Spanned<Token>, Vec<Spanned<DebugArgument>>)| {
+                        Statement::from(DebugStatement {
+                            with_newline: matches!(token.inner, Token::DebugLn),
+                            args: args.into_iter().map(|s| s.inner).collect(),
+                        })
+                    },
+                ),
+            just(Token::DebugStack)
+                .spanned()
+                .then_ignore(just(Token::Newline))
+                .map(|_| Statement::DebugStack),
+        ));
 
         let assignment_statement = select! { token::Token::Identifier(ident) => ident }
             .spanned()

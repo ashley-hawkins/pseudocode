@@ -20,6 +20,7 @@ pub enum Token<'src> {
 
     Debug,
     DebugLn,
+    DebugStack,
     StringLiteral(&'src str),
     Identifier(&'src str),
 
@@ -91,6 +92,7 @@ impl Display for Token<'_> {
         match self {
             Token::Debug => write!(f, "DEBUG"),
             Token::DebugLn => write!(f, "DEBUGLN"),
+            Token::DebugStack => write!(f, "DEBUGSTACK"),
             Token::Error(e) => write!(f, "Error({})", e),
             Token::StringLiteral(s) => write!(f, "<string literal: \"{}\">", s),
             Token::Identifier(s) => write!(f, "{:?}", s),

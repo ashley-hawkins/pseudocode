@@ -289,6 +289,13 @@ impl InterpreterState {
                     println!();
                 }
             }
+            Instruction::DebugStack => {
+                println!("--- Stack Dump ---");
+                for (i, val) in self.expr_stack.iter().enumerate() {
+                    println!("{}: {}", i, val.inner);
+                }
+                println!("------------------");
+            }
             Instruction::FunctionHeader { .. } => {
                 panic!("Function header encountered during normal execution")
             }

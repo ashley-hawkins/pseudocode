@@ -67,6 +67,8 @@ enum LexerToken<'a> {
     Debug,
     #[token("DEBUGLN")]
     DebugLn,
+    #[token("DEBUGSTACK")]
+    DebugStack,
     // Single-character tokens
     #[token("(")]
     RoundL,
@@ -378,6 +380,7 @@ fn into_final_tokens<'src>(
                 match source_token {
                     LexerToken::Debug => Token::Debug,
                     LexerToken::DebugLn => Token::DebugLn,
+                    LexerToken::DebugStack => Token::DebugStack,
                     LexerToken::RoundL => Token::LRoundBracket,
                     LexerToken::RoundR => Token::RRoundBracket,
                     LexerToken::SquareL => Token::LSquareBracket,
