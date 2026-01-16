@@ -361,7 +361,7 @@ pub fn process_type_errors<'a>(src: &'a str, file_name: String, type_errors: &[T
             match &e.context {
                 TypeErrorContext::SubExprOf(context) => match &context.inner {
                     Expr::BinaryOp { op, .. } => op.span.start.bytes..op.span.end.bytes,
-                    Expr::ArrayAccess { left, right } => {
+                    Expr::ArrayAccess { left: _, right } => {
                         right.span.start.bytes..right.span.end.bytes
                     }
                     _ => context.span.start.bytes..context.span.end.bytes,
