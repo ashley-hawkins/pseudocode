@@ -1,0 +1,15 @@
+[package]
+name = "pseudocode"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[dependencies]
+ariadne.workspace = true
+chumsky.workspace = true
+derive_more = { version = "2.1.1", features = ["from"] }
+logos = "0.16.0"
+thiserror = "2.0.17"
+
+[lib]
+name = "pseudocode"
