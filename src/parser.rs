@@ -167,12 +167,17 @@ pub fn parse_pseudocode_program<
                 },
             );
 
-        let atom = choice((
+        let atom_common = choice((
             paren_expr.spanned(),
             array_literal.spanned(),
-            function_call.spanned(),
             value.spanned(),
         ));
+
+        let atom = if mode == Mode::ProceduralImp {
+            choice((function_call.spanned(), atom_common)).boxed()
+        } else {
+            atom_common.boxed()
+        };
 
         let array_index = choice((
             expr.clone()
@@ -390,19 +395,25 @@ pub fn parse_pseudocode_program<
             .delimited_by(just(Token::Return), just(Token::Newline))
             .map(|expr_opt| Statement::from(ReturnStatement { expr: expr_opt }));
 
-        choice((
-            goto_statement,
-            debug_statement,
-            return_statement,
-            if_statement,
-            while_statement,
-            for_statement,
-            assignment_statement,
-            swap_statement,
+        let common_statement = choice((
+            debug_statement.clone(),
+            return_statement.clone(),
+            if_statement.clone(),
+            assignment_statement.clone(),
+            swap_statement.clone(),
             expr.clone()
                 .then_ignore(just(Token::Newline))
                 .map(Statement::BareExpr),
-        ))
+        ));
+
+        let jumpy_statement = choice((common_statement.clone(), goto_statement));
+        let structured_statement = choice((common_statement, for_statement, while_statement));
+
+        if mode == Mode::JumpyImp {
+            jumpy_statement.boxed()
+        } else {
+            structured_statement.boxed()
+        }
     });
 
     let block = statement
@@ -434,19 +445,30 @@ pub fn parse_pseudocode_program<
             body,
         });
 
-    procedure
-        .spanned()
-        .repeated()
-        .collect::<Vec<_>>()
-        .then(
-            just([Token::Algorithm, Token::Colon, Token::Newline])
-                .ignore_then(indented_block)
-                .spanned(),
-        )
-        .map(|(procedures, statements)| AstRoot {
-            procedures,
-            main_algorithm: statements,
-        })
+    if mode == Mode::ProceduralImp {
+        procedure
+            .spanned()
+            .repeated()
+            .collect::<Vec<_>>()
+            .then(
+                just([Token::Algorithm, Token::Colon, Token::Newline])
+                    .ignore_then(indented_block)
+                    .spanned(),
+            )
+            .map(|(procedures, statements)| AstRoot {
+                procedures,
+                main_algorithm: statements,
+            })
+            .boxed()
+    } else {
+        block
+            .spanned()
+            .map(|main_algorithm| AstRoot {
+                procedures: vec![],
+                main_algorithm,
+            })
+            .boxed()
+    }
 }
 
 pub fn parse_str(
