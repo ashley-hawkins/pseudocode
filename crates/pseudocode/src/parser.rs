@@ -382,7 +382,7 @@ pub fn parse_pseudocode_program<
         let is_in = infix(
             left(0),
             just([Token::Is, Token::In]).spanned(),
-            |lhs, op, rhs, extra| Spanned {
+            |lhs, _op, rhs, extra| Spanned {
                 inner: Expr::BinaryOp {
                     left: Box::new(lhs),
                     op: Spanned {
