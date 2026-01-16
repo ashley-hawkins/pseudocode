@@ -6,8 +6,8 @@ use crate::{
     expr::{BinaryOperator, Expr, UnaryOperator},
     interpreter::RuntimeError,
     parser::{
-        AssignmentStatement, AstRoot, Block, DebugStatement, ForStatement, GotoStatement,
-        IfStatement, ProcedureDefinition, ReturnStatement, Statement, SwapStatement,
+        AssignmentLhs, AssignmentStatement, AstRoot, Block, DebugStatement, ForStatement,
+        GotoStatement, IfStatement, ProcedureDefinition, ReturnStatement, Statement, SwapStatement,
         WhileStatement,
     },
     type_checker::Type,
@@ -166,6 +166,7 @@ pub enum RelativeTarget {
 #[derive(Clone, PartialEq, Debug)]
 pub enum PopDestination {
     Environment(String),
+    ArrayAccess,
     Discard,
 }
 
@@ -194,6 +195,11 @@ pub enum InstructionGeneric<Target> {
 
     // in: popped value
     Pop(PopDestination),
+
+    Dup(usize),
+
+    // swaps the nth value from the top with the mth value from the top
+    SwapNth(usize, usize),
 
     // in: lhs, rhs
     // out: result
@@ -309,10 +315,6 @@ impl InstructionGenerationContext {
         self.instructions.len()
     }
 
-    // fn finalize_single_instruction(&self, instr: InstructionRelative) -> InstructionAbsolute {
-
-    // }
-
     fn finalize(self) -> Vec<Spanned<Instruction>> {
         let Self {
             labels,
@@ -349,6 +351,8 @@ impl InstructionGenerationContext {
             },
             InstructionRelative::Push(push_source) => Instruction::Push(push_source),
             InstructionRelative::Pop(pop_destination) => Instruction::Pop(pop_destination),
+            InstructionRelative::Dup(n) => Instruction::Dup(n),
+            InstructionRelative::SwapNth(n, m) => Instruction::SwapNth(n, m),
             InstructionRelative::Binary { op } => Instruction::Binary { op },
             InstructionRelative::ArrayBuild => Instruction::ArrayBuild,
             InstructionRelative::ArrayLiteral { length } => Instruction::ArrayLiteral { length },
@@ -490,7 +494,7 @@ impl GenerateInstructions for Spanned<Statement<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
         match &self.inner {
             Statement::Goto(stmt) => context.push(&self.span.make_wrapped(*stmt)),
-            Statement::Swap(stmt) => context.push(&self.span.make_wrapped(*stmt)),
+            Statement::Swap(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
             Statement::Assignment(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
             Statement::If(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
             Statement::While(stmt) => context.push(&self.span.make_wrapped(stmt.clone())),
@@ -548,27 +552,84 @@ impl GenerateInstructions for Spanned<GotoStatement> {
 
 impl GenerateInstructions for Spanned<SwapStatement<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(
-            PushSource::Environment(self.inner.ident_1.inner.to_owned()),
-        )));
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(
-            PushSource::Environment(self.inner.ident_2.inner.to_owned()),
-        )));
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
-            PopDestination::Environment(self.inner.ident_1.inner.to_owned()),
-        )));
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
-            PopDestination::Environment(self.inner.ident_2.inner.to_owned()),
-        )));
+        match &self.inner.lhs {
+            AssignmentLhs::Variable(spanned) => {
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(
+                    PushSource::Environment(spanned.inner.to_owned()),
+                )));
+            }
+            AssignmentLhs::ArrayAccess { left, right } => {
+                context.push(&**left);
+                context.push(&**right);
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Dup(2)));
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::ArrayIndex));
+            }
+        }
+        match &self.inner.rhs {
+            AssignmentLhs::Variable(spanned) => {
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Push(
+                    PushSource::Environment(spanned.inner.to_owned()),
+                )));
+                context
+                    .push_instruction(self.span.make_wrapped(InstructionRelative::SwapNth(0, 1)));
+            }
+            AssignmentLhs::ArrayAccess { left, right } => {
+                context.push(&**left);
+                context.push(&**right);
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Dup(2)));
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::ArrayIndex));
+                context
+                    .push_instruction(self.span.make_wrapped(InstructionRelative::SwapNth(0, 3)));
+            }
+        }
+        match &self.inner.rhs {
+            AssignmentLhs::Variable(spanned) => {
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
+                    PopDestination::Environment(spanned.inner.to_owned()),
+                )));
+            }
+            AssignmentLhs::ArrayAccess { .. } => {
+                context.push_instruction(
+                    self.span
+                        .make_wrapped(InstructionRelative::Pop(PopDestination::ArrayAccess)),
+                );
+            }
+        }
+        match &self.inner.lhs {
+            AssignmentLhs::Variable(spanned) => {
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
+                    PopDestination::Environment(spanned.inner.to_owned()),
+                )));
+            }
+            AssignmentLhs::ArrayAccess { .. } => {
+                context.push_instruction(
+                    self.span
+                        .make_wrapped(InstructionRelative::Pop(PopDestination::ArrayAccess)),
+                );
+            }
+        }
     }
 }
 
 impl GenerateInstructions for Spanned<AssignmentStatement<'_>> {
     fn generate_instructions(&self, context: &mut InstructionGenerationContext) {
-        context.push(&self.inner.expression);
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
-            PopDestination::Environment(self.inner.identifier.inner.to_owned()),
-        )));
+        match &self.inner.lhs {
+            crate::parser::AssignmentLhs::Variable(identifier) => {
+                context.push(&self.inner.expression);
+                context.push_instruction(self.span.make_wrapped(InstructionRelative::Pop(
+                    PopDestination::Environment(identifier.inner.to_owned()),
+                )));
+            }
+            crate::parser::AssignmentLhs::ArrayAccess { left, right } => {
+                context.push(&**left);
+                context.push(&**right);
+                context.push(&self.inner.expression);
+                context.push_instruction(
+                    self.span
+                        .make_wrapped(InstructionRelative::Pop(PopDestination::ArrayAccess)),
+                );
+            }
+        }
     }
 }
 
@@ -622,7 +683,9 @@ impl GenerateInstructions for Spanned<ForStatement<'_>> {
                             right: Box::new(range_span.make_wrapped(Expr::NumberLiteral(1.0))),
                         });
                         let assignment_stmt = AssignmentStatement {
-                            identifier: range_span.make_wrapped(self.inner.loop_variable),
+                            lhs: AssignmentLhs::Variable(
+                                range_span.make_wrapped(self.inner.loop_variable),
+                            ),
                             expression: increment_expr,
                         };
                         range_span.make_wrapped(Statement::Assignment(assignment_stmt))

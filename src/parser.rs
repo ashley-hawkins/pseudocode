@@ -20,10 +20,10 @@ pub struct ReturnStatement<'a> {
     pub expr: Option<Spanned<Expr<'a>>>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct SwapStatement<'a> {
-    pub ident_1: Spanned<&'a str>,
-    pub ident_2: Spanned<&'a str>,
+    pub lhs: AssignmentLhs<'a>,
+    pub rhs: AssignmentLhs<'a>,
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -52,7 +52,7 @@ pub struct WhileStatement<'a> {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct AssignmentStatement<'a> {
-    pub identifier: Spanned<&'a str>,
+    pub lhs: AssignmentLhs<'a>,
     pub expression: Spanned<Expr<'a>>,
 }
 
@@ -66,6 +66,15 @@ pub struct DebugStatement<'a> {
 pub enum DebugArgument<'a> {
     String(&'a str),
     Expr(Spanned<Expr<'a>>),
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub enum AssignmentLhs<'a> {
+    Variable(Spanned<&'a str>),
+    ArrayAccess {
+        left: Box<Spanned<Expr<'a>>>,
+        right: Box<Spanned<Expr<'a>>>,
+    },
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug, derive_more::From)]
@@ -333,24 +342,77 @@ pub fn parse_pseudocode_program<
                 .map(|_| Statement::DebugStack),
         ));
 
-        let assignment_statement = select! { token::Token::Identifier(ident) => ident }
-            .spanned()
-            .then_ignore(just(token::Token::Assign))
-            .then(expr.clone())
-            .then_ignore(just(Token::Newline))
-            .map(|(identifier, expression)| {
-                Statement::from(AssignmentStatement {
-                    identifier,
-                    expression,
-                })
-            });
+        let assignment_statement = choice((
+            select! { token::Token::Identifier(ident) => ident }
+                .then_ignore(just(Token::Assign))
+                .spanned()
+                .map(AssignmentLhs::Variable),
+            expr.clone()
+                .then_ignore(just(Token::Assign))
+                .try_map(|expr, _span| match expr.inner {
+                    Expr::ArrayAccess {
+                        left,
+                        right:
+                            Spanned {
+                                inner: ArrayIndex::SingleIndex(right),
+                                ..
+                            },
+                    } => Ok(AssignmentLhs::ArrayAccess { left, right }),
+                    _ => Err(chumsky::error::Rich::custom(
+                        expr.span,
+                        "Left-hand side of assignment must be a variable or array access",
+                    )),
+                }),
+        ))
+        .then(expr.clone())
+        .then_ignore(just(Token::Newline))
+        .map(|(lhs, expression)| Statement::from(AssignmentStatement { lhs, expression }));
 
-        let swap_statement = select! { token::Token::Identifier(ident) => ident }
-            .spanned()
-            .then_ignore(just(token::Token::Swap))
-            .then(select! { token::Token::Identifier(ident) => ident }.spanned())
-            .then_ignore(just(Token::Newline))
-            .map(|(ident_1, ident_2)| Statement::from(SwapStatement { ident_1, ident_2 }));
+        let swap_statement = choice((
+            select! { token::Token::Identifier(ident) => ident }
+                .then_ignore(just(Token::Swap))
+                .spanned()
+                .map(AssignmentLhs::Variable),
+            expr.clone()
+                .then_ignore(just(Token::Swap))
+                .try_map(|expr, _span| match expr.inner {
+                    Expr::ArrayAccess {
+                        left,
+                        right:
+                            Spanned {
+                                inner: ArrayIndex::SingleIndex(right),
+                                ..
+                            },
+                    } => Ok(AssignmentLhs::ArrayAccess { left, right }),
+                    _ => Err(chumsky::error::Rich::custom(
+                        expr.span,
+                        "Left-hand side of assignment must be a variable or array access",
+                    )),
+                }),
+        ))
+        .then(choice((
+            select! { token::Token::Identifier(ident) => ident }
+                .then_ignore(just(Token::Newline))
+                .spanned()
+                .map(AssignmentLhs::Variable),
+            expr.clone()
+                .then_ignore(just(Token::Newline))
+                .try_map(|expr, _span| match expr.inner {
+                    Expr::ArrayAccess {
+                        left,
+                        right:
+                            Spanned {
+                                inner: ArrayIndex::SingleIndex(right),
+                                ..
+                            },
+                    } => Ok(AssignmentLhs::ArrayAccess { left, right }),
+                    _ => Err(chumsky::error::Rich::custom(
+                        expr.span,
+                        "Left-hand side of assignment must be a variable or array access",
+                    )),
+                }),
+        )))
+        .map(|(lhs, rhs)| Statement::from(SwapStatement { lhs, rhs }));
 
         let if_statement = recursive(|if_statement| {
             expr.clone()

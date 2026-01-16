@@ -184,8 +184,26 @@ impl InterpreterState {
                 let new_val = self.pop_value().inner.deep_clone();
                 self.set_or_insert_var_in_current_frame(dest, new_val);
             }
+            Instruction::Pop(crate::instruction::PopDestination::ArrayAccess) => {
+                let new_val = self.pop_value().inner.deep_clone();
+                let array_index = self.pop_value().ensure_int()? as usize;
+                let array = self.pop_value().ensure_array()?;
+                let mut array_ref = array.borrow_mut();
+                array_ref[array_index] = new_val;
+            }
             Instruction::Pop(crate::instruction::PopDestination::Discard) => {
                 self.pop_value();
+            }
+            Instruction::Dup(n) => {
+                let dup_count = n;
+                for _ in 0..*dup_count {
+                    let val = self.expr_stack[self.expr_stack.len() - dup_count].clone();
+                    self.expr_stack.push(val);
+                }
+            }
+            Instruction::SwapNth(n, m) => {
+                let len = self.expr_stack.len();
+                self.expr_stack.swap(len - 1 - n, len - 1 - m);
             }
             Instruction::Binary { op } => {
                 let res = self.binary_operation(op)?;
