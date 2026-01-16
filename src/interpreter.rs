@@ -24,8 +24,9 @@ pub struct Frame {
     pub return_address: Option<usize>,
 }
 
-pub struct InterpreterState<'prog> {
-    pub program: &'prog Program,
+pub type Program = [Spanned<Instruction>];
+
+pub struct InterpreterState {
     pub instruction_offset: usize,
     pub frame_stack: Vec<Frame>,
     pub expr_stack: Vec<Spanned<Value>>,
@@ -85,20 +86,17 @@ pub enum StepResult {
     Halted,
 }
 
-pub type Program = [Spanned<Instruction>];
-
 pub fn run_program(program: &Program) -> Result<Value, RuntimeError> {
-    let mut state = InterpreterState::new(program);
+    let mut state = InterpreterState::new();
 
-    while let StepResult::Continued = state.step()? {}
+    while let StepResult::Continued = state.step(program)? {}
 
     Ok(state.pop_value().inner)
 }
 
-impl<'prog> InterpreterState<'prog> {
-    pub fn new(program: &'prog Program) -> Self {
+impl InterpreterState {
+    pub fn new() -> Self {
         Self {
-            program,
             instruction_offset: 0,
             frame_stack: vec![Frame {
                 environment: Environment(HashMap::new()),
@@ -154,11 +152,11 @@ impl<'prog> InterpreterState<'prog> {
 
     fn prepare_function_call(
         &mut self,
+        function_header: &Spanned<Instruction>,
         argument_count: usize,
         function_offset: usize,
     ) -> ControlFlow {
-        let Instruction::FunctionHeader { parameter_count } = &self.program[function_offset].inner
-        else {
+        let Instruction::FunctionHeader { parameter_count } = &function_header.inner else {
             panic!("Function call target is not function metadata");
         };
 
@@ -171,11 +169,8 @@ impl<'prog> InterpreterState<'prog> {
         ControlFlow::Jump(function_offset + 1)
     }
 
-    fn run_instruction(&mut self) -> Result<ControlFlow, RuntimeError> {
-        let instruction: &chumsky::prelude::Spanned<
-            crate::instruction::InstructionGeneric<usize>,
-            SourceSpan,
-        > = &self.program[self.instruction_offset];
+    fn run_instruction(&mut self, program: &Program) -> Result<ControlFlow, RuntimeError> {
+        let instruction = &program[self.instruction_offset];
 
         match &instruction.inner {
             Instruction::Push(crate::instruction::PushSource::Literal(literal)) => {
@@ -259,7 +254,7 @@ impl<'prog> InterpreterState<'prog> {
                 self.push_value(instruction.span.make_wrapped(result));
             }
             Instruction::FunctionCall { target, arg_count } => {
-                return Ok(self.prepare_function_call(*arg_count, *target));
+                return Ok(self.prepare_function_call(&program[*target], *arg_count, *target));
             }
             Instruction::Jump {
                 is_conditional,
@@ -301,8 +296,8 @@ impl<'prog> InterpreterState<'prog> {
         Ok(ControlFlow::Continue)
     }
 
-    pub fn step(&mut self) -> Result<StepResult, RuntimeError> {
-        let control_flow = self.run_instruction()?;
+    pub fn step(&mut self, program: &Program) -> Result<StepResult, RuntimeError> {
+        let control_flow = self.run_instruction(program)?;
 
         match control_flow {
             ControlFlow::Continue => {
@@ -325,5 +320,11 @@ impl<'prog> InterpreterState<'prog> {
         }
 
         Ok(StepResult::Continued)
+    }
+}
+
+impl Default for InterpreterState {
+    fn default() -> Self {
+        Self::new()
     }
 }
