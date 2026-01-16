@@ -4,11 +4,13 @@ use chumsky::span::{Span, WrappingSpan};
 
 use crate::{
     expr::{BinaryOperator, Expr, UnaryOperator},
+    interpreter::RuntimeError,
     parser::{
         AssignmentStatement, AstRoot, Block, DebugStatement, ForStatement, GotoStatement,
         IfStatement, ProcedureDefinition, ReturnStatement, Statement, SwapStatement,
         WhileStatement,
     },
+    type_checker::Type,
     util::Spanned,
 };
 
@@ -82,24 +84,70 @@ impl Value {
         }
     }
 
-    pub fn ensure_int(&self) -> Option<i64> {
+    fn get_type(&self) -> Type {
         match self {
-            Value::Number(n) if n.fract() == 0.0 => Some(*n as i64),
-            _ => None,
+            Value::None => Type::None,
+            Value::Number(x) if x.fract() == 0.0 => Type::Integer,
+            Value::Number(_) => Type::Number,
+            Value::Bool(_) => Type::Boolean,
+            Value::Array(_) => Type::Array,
+        }
+    }
+}
+
+pub trait EnsureType {
+    fn ensure_number(self) -> Result<f64, RuntimeError>;
+    fn ensure_int(self) -> Result<i64, RuntimeError>;
+    fn ensure_bool(self) -> Result<bool, RuntimeError>;
+    fn ensure_array(self) -> Result<Rc<RefCell<Vec<Value>>>, RuntimeError>;
+}
+
+impl EnsureType for Spanned<Value> {
+    fn ensure_int(self) -> Result<i64, RuntimeError> {
+        let Self { inner, span } = self;
+        match inner {
+            Value::Number(n) if n.fract() == 0.0 => Ok(n as i64),
+            _ => Err(RuntimeError::TypeError {
+                expected: Type::Integer,
+                found: inner.get_type(),
+                span,
+            }),
         }
     }
 
-    pub fn ensure_number(&self) -> Option<f64> {
-        match self {
-            Value::Number(n) => Some(*n),
-            _ => None,
+    fn ensure_number(self) -> Result<f64, RuntimeError> {
+        let Self { inner, span } = self;
+        match inner {
+            Value::Number(n) => Ok(n),
+            _ => Err(RuntimeError::TypeError {
+                expected: Type::Number,
+                found: inner.get_type(),
+                span,
+            }),
         }
     }
 
-    pub fn ensure_bool(&self) -> Option<bool> {
-        match self {
-            Value::Bool(b) => Some(*b),
-            _ => None,
+    fn ensure_bool(self) -> Result<bool, RuntimeError> {
+        let Self { inner, span } = self;
+        match inner {
+            Value::Bool(b) => Ok(b),
+            _ => Err(RuntimeError::TypeError {
+                expected: Type::Boolean,
+                found: inner.get_type(),
+                span,
+            }),
+        }
+    }
+
+    fn ensure_array(self) -> Result<Rc<RefCell<Vec<Value>>>, RuntimeError> {
+        let Self { inner, span } = self;
+        match inner {
+            Value::Array(arr) => Ok(arr),
+            _ => Err(RuntimeError::TypeError {
+                expected: Type::Array,
+                found: inner.get_type(),
+                span,
+            }),
         }
     }
 }

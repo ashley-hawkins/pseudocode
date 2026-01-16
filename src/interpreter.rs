@@ -3,11 +3,20 @@ use std::collections::HashMap;
 use chumsky::span::WrappingSpan;
 
 use crate::{
-    instruction::{Instruction, Value},
+    instruction::{EnsureType, Instruction, Value},
+    type_checker::Type,
     util::{SourceSpan, Spanned},
 };
 
 pub struct Environment(HashMap<String, Value>);
+
+pub enum RuntimeError {
+    TypeError {
+        expected: Type,
+        found: Type,
+        span: SourceSpan,
+    },
+}
 
 pub struct Frame {
     pub environment: Environment,
@@ -32,62 +41,43 @@ fn binary_operation(
     lhs: Spanned<Value>,
     rhs: Spanned<Value>,
     op: &crate::expr::BinaryOperator,
-) -> Value {
-    match op {
-        crate::expr::BinaryOperator::Add => Value::Number(
-            lhs.inner.ensure_number().expect("Expected number")
-                + rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Sub => Value::Number(
-            lhs.inner.ensure_number().expect("Expected number")
-                - rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Mul => Value::Number(
-            lhs.inner.ensure_number().expect("Expected number")
-                * rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Div => Value::Number(
-            lhs.inner.ensure_number().expect("Expected number")
-                / rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Lt => Value::Bool(
-            lhs.inner.ensure_number().expect("Expected number")
-                < rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Gt => Value::Bool(
-            lhs.inner.ensure_number().expect("Expected number")
-                > rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Lte => Value::Bool(
-            lhs.inner.ensure_number().expect("Expected number")
-                <= rhs.inner.ensure_number().expect("Expected number"),
-        ),
-        crate::expr::BinaryOperator::Gte => Value::Bool(
-            lhs.inner.ensure_number().expect("Expected number")
-                >= rhs.inner.ensure_number().expect("Expected number"),
-        ),
+) -> Result<Value, RuntimeError> {
+    Ok(match op {
+        crate::expr::BinaryOperator::Add => {
+            Value::Number(lhs.ensure_number()? + rhs.ensure_number()?)
+        }
+        crate::expr::BinaryOperator::Sub => {
+            Value::Number(lhs.ensure_number()? - rhs.ensure_number()?)
+        }
+        crate::expr::BinaryOperator::Mul => {
+            Value::Number(lhs.ensure_number()? * rhs.ensure_number()?)
+        }
+        crate::expr::BinaryOperator::Div => {
+            Value::Number(lhs.ensure_number()? / rhs.ensure_number()?)
+        }
+        crate::expr::BinaryOperator::Lt => Value::Bool(lhs.ensure_number()? < rhs.ensure_number()?),
+        crate::expr::BinaryOperator::Gt => Value::Bool(lhs.ensure_number()? > rhs.ensure_number()?),
+        crate::expr::BinaryOperator::Lte => {
+            Value::Bool(lhs.ensure_number()? <= rhs.ensure_number()?)
+        }
+        crate::expr::BinaryOperator::Gte => {
+            Value::Bool(lhs.ensure_number()? >= rhs.ensure_number()?)
+        }
         crate::expr::BinaryOperator::Eq => Value::Bool(lhs.inner == rhs.inner),
         crate::expr::BinaryOperator::Neq => Value::Bool(lhs.inner != rhs.inner),
-        crate::expr::BinaryOperator::And => Value::Bool(
-            lhs.inner.ensure_bool().expect("Expected bool")
-                && rhs.inner.ensure_bool().expect("Expected bool"),
-        ),
-        crate::expr::BinaryOperator::Or => Value::Bool(
-            lhs.inner.ensure_bool().expect("Expected bool")
-                || rhs.inner.ensure_bool().expect("Expected bool"),
-        ),
-    }
+        crate::expr::BinaryOperator::And => Value::Bool(lhs.ensure_bool()? && rhs.ensure_bool()?),
+        crate::expr::BinaryOperator::Or => Value::Bool(lhs.ensure_bool()? || rhs.ensure_bool()?),
+    })
 }
 
-fn unary_operation(operand: Spanned<Value>, op: &crate::expr::UnaryOperator) -> Value {
-    match op {
-        crate::expr::UnaryOperator::Neg => {
-            Value::Number(-operand.inner.ensure_number().expect("Expected number"))
-        }
-        crate::expr::UnaryOperator::Not => {
-            Value::Bool(!operand.inner.ensure_bool().expect("Expected bool"))
-        }
-    }
+fn unary_operation(
+    operand: Spanned<Value>,
+    op: &crate::expr::UnaryOperator,
+) -> Result<Value, RuntimeError> {
+    Ok(match op {
+        crate::expr::UnaryOperator::Neg => Value::Number(-operand.ensure_number()?),
+        crate::expr::UnaryOperator::Not => Value::Bool(!operand.ensure_bool()?),
+    })
 }
 
 pub enum StepResult {
@@ -97,12 +87,12 @@ pub enum StepResult {
 
 pub type Program = [Spanned<Instruction>];
 
-pub fn run_program(program: &Program) -> Value {
+pub fn run_program(program: &Program) -> Result<Value, RuntimeError> {
     let mut state = InterpreterState::new(program);
 
-    while let StepResult::Continued = state.step() {}
+    while let StepResult::Continued = state.step()? {}
 
-    state.pop_value().inner
+    Ok(state.pop_value().inner)
 }
 
 impl<'prog> InterpreterState<'prog> {
@@ -146,14 +136,17 @@ impl<'prog> InterpreterState<'prog> {
         self.frame_stack.pop().unwrap()
     }
 
-    fn binary_operation(&mut self, op: &crate::expr::BinaryOperator) -> Value {
+    fn binary_operation(
+        &mut self,
+        op: &crate::expr::BinaryOperator,
+    ) -> Result<Value, RuntimeError> {
         let rhs = self.pop_value();
         let lhs = self.pop_value();
 
         binary_operation(lhs, rhs, op)
     }
 
-    fn unary_operation(&mut self, op: &crate::expr::UnaryOperator) -> Value {
+    fn unary_operation(&mut self, op: &crate::expr::UnaryOperator) -> Result<Value, RuntimeError> {
         let operand = self.pop_value();
 
         unary_operation(operand, op)
@@ -178,7 +171,7 @@ impl<'prog> InterpreterState<'prog> {
         ControlFlow::Jump(function_offset + 1)
     }
 
-    fn run_instruction(&mut self) -> ControlFlow {
+    fn run_instruction(&mut self) -> Result<ControlFlow, RuntimeError> {
         let instruction: &chumsky::prelude::Spanned<
             crate::instruction::InstructionGeneric<usize>,
             SourceSpan,
@@ -200,16 +193,16 @@ impl<'prog> InterpreterState<'prog> {
                 self.pop_value();
             }
             Instruction::Binary { op } => {
-                let res = self.binary_operation(op);
+                let res = self.binary_operation(op)?;
                 self.push_value(instruction.span.make_wrapped(res));
             }
             Instruction::Unary(unary_operator) => {
                 // todo: have a span for the operand
-                let res = self.unary_operation(unary_operator);
+                let res = self.unary_operation(unary_operator)?;
                 self.push_value(instruction.span.make_wrapped(res));
             }
             Instruction::ArrayBuild => {
-                let array_size = self.pop_value().ensure_int().unwrap() as usize;
+                let array_size = self.pop_value().ensure_int()? as usize;
                 let mut elements = Vec::with_capacity(array_size);
 
                 for _ in 0..array_size {
@@ -230,62 +223,59 @@ impl<'prog> InterpreterState<'prog> {
                 self.push_value(instruction.span.make_wrapped(Value::from(elements)));
             }
             Instruction::ArrayIndex => {
-                let index = self.pop_value().ensure_int().unwrap() as usize;
-                let array = self.pop_value();
+                let index = self.pop_value().ensure_int()? as usize;
+                let arr = self.pop_value().ensure_array()?;
 
-                match array.inner {
-                    Value::Array(arr) => {
-                        let array_ref = arr.borrow();
-                        let result = array_ref[index].clone();
-                        self.push_value(instruction.span.make_wrapped(result));
-                    }
-                    _ => panic!("Array index attempted on non-array value"),
-                }
+                let array_ref = arr.borrow();
+                let result = array_ref[index].clone();
+                self.push_value(instruction.span.make_wrapped(result));
             }
             Instruction::ArraySlice { has_start, has_end } => {
-                let end = has_end.then(|| self.pop_value().ensure_int().unwrap());
-                let start = has_start.then(|| self.pop_value().ensure_int().unwrap());
-                let array = self.pop_value();
+                let end = if *has_end {
+                    Some(self.pop_value().ensure_int()?)
+                } else {
+                    None
+                };
 
-                match array.inner {
-                    Value::Array(arr) => {
-                        let array_ref = arr.borrow();
-                        let start_idx = start.unwrap_or(0) as usize;
-                        let end_idx = end.unwrap_or(array_ref.len() as i64) as usize;
+                let start = if *has_start {
+                    Some(self.pop_value().ensure_int()?)
+                } else {
+                    None
+                };
 
-                        let result = Value::from(
-                            array_ref[start_idx..end_idx]
-                                .iter()
-                                .map(|v| v.deep_clone())
-                                .collect::<Vec<_>>(),
-                        );
+                let arr = self.pop_value().ensure_array()?;
 
-                        self.push_value(instruction.span.make_wrapped(result));
-                    }
-                    _ => panic!("Array slice attempted on non-array value"),
-                }
+                let array_ref = arr.borrow();
+                let start_idx = start.unwrap_or(0) as usize;
+                let end_idx = end.unwrap_or(array_ref.len() as i64) as usize;
+
+                let result = Value::from(
+                    array_ref[start_idx..end_idx]
+                        .iter()
+                        .map(|v| v.deep_clone())
+                        .collect::<Vec<_>>(),
+                );
+
+                self.push_value(instruction.span.make_wrapped(result));
             }
             Instruction::FunctionCall { target, arg_count } => {
-                return self.prepare_function_call(*arg_count, *target);
+                return Ok(self.prepare_function_call(*arg_count, *target));
             }
             Instruction::Jump {
                 is_conditional,
                 target,
             } => {
                 if *is_conditional {
-                    let condition = self.pop_value();
-                    match condition.inner {
-                        Value::Bool(true) => {
-                            return ControlFlow::Jump(*target);
-                        }
-                        Value::Bool(false) => {}
-                        _ => panic!("Condition for conditional jump is not a boolean"),
+                    let condition = self.pop_value().ensure_bool()?;
+
+                    if condition {
+                        return Ok(ControlFlow::Jump(*target));
                     }
                 } else {
-                    return ControlFlow::Jump(*target);
+                    return Ok(ControlFlow::Jump(*target));
                 }
             }
-            Instruction::Return => return ControlFlow::Return,
+            Instruction::Return => return Ok(ControlFlow::Return),
             Instruction::Debug {
                 with_newline,
                 arg_sources,
@@ -308,11 +298,11 @@ impl<'prog> InterpreterState<'prog> {
                 panic!("Function header encountered during normal execution")
             }
         }
-        ControlFlow::Continue
+        Ok(ControlFlow::Continue)
     }
 
-    pub fn step(&mut self) -> StepResult {
-        let control_flow = self.run_instruction();
+    pub fn step(&mut self) -> Result<StepResult, RuntimeError> {
+        let control_flow = self.run_instruction()?;
 
         match control_flow {
             ControlFlow::Continue => {
@@ -328,12 +318,12 @@ impl<'prog> InterpreterState<'prog> {
                         self.instruction_offset = return_address;
                     }
                     None => {
-                        return StepResult::Halted;
+                        return Ok(StepResult::Halted);
                     }
                 }
             }
         }
 
-        StepResult::Continued
+        Ok(StepResult::Continued)
     }
 }

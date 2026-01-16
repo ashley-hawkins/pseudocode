@@ -6,6 +6,7 @@ use chumsky::error::RichReason;
 use clap::Parser;
 use pseudocode::{
     instruction::generate_instructions_for_ast,
+    interpreter::RuntimeError,
     type_checker::{ValidateTypes, process_type_errors},
     util::SourceSpan,
 };
@@ -37,17 +38,54 @@ fn main() {
     if let Some(ast) = result.output() {
         println!("{:#?}", ast);
         let type_errors = ast.validate_types();
-        process_type_errors(&src, file_name, &type_errors);
+        process_type_errors(&src, file_name.clone(), &type_errors);
         if !type_errors.is_empty() {
             std::process::exit(1);
         }
 
         let program = generate_instructions_for_ast(ast);
         println!("{:#?}", program.into_iter().enumerate().collect::<Vec<_>>());
-        println!(
-            "{:#?}",
-            pseudocode::interpreter::run_program(&generate_instructions_for_ast(ast))
-        );
+
+        match pseudocode::interpreter::run_program(&generate_instructions_for_ast(ast)) {
+            Ok(value) => {
+                println!("Program finished with value: {:#?}", value);
+            }
+            Err(e) => {
+                match e {
+                    RuntimeError::TypeError {
+                        expected,
+                        found,
+                        span,
+                    } => {
+                        let report = Report::build(
+                            ReportKind::Error,
+                            (file_name.clone(), span.start.bytes..span.end.bytes),
+                        )
+                        .with_config(
+                            ariadne::Config::new().with_index_type(ariadne::IndexType::Byte),
+                        )
+                        .with_message(format!(
+                            "Type error: expected {}, found {}",
+                            expected, found
+                        ))
+                        .with_label(
+                            Label::new((file_name.clone(), span.start.bytes..span.end.bytes))
+                                .with_message(format!(
+                                    "Expected {}, but the result type of this expression is {}",
+                                    expected, found
+                                ))
+                                .with_color(Color::Red),
+                        )
+                        .finish();
+
+                        report
+                            .print(sources([(file_name.clone(), src.clone())]))
+                            .unwrap();
+                    }
+                }
+                std::process::exit(1);
+            }
+        }
     } else {
         // Use the debug representation of the parse result as a message and
         // print it with ariadne over the whole source range.
