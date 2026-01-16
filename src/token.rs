@@ -110,7 +110,7 @@ impl Display for Token<'_> {
             Token::Or => write!(f, "or"),
             Token::Not => write!(f, "not"),
             Token::Assign => write!(f, "<-"),
-            Token::Swap => write!(f, "<=>"),
+            Token::Swap => write!(f, "<->"),
             Token::LRoundBracket => write!(f, "("),
             Token::RRoundBracket => write!(f, ")"),
             Token::LSquareBracket => write!(f, "["),
