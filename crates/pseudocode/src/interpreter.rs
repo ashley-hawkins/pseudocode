@@ -160,8 +160,15 @@ impl InterpreterState {
         self.expr_stack.pop().unwrap()
     }
 
-    fn var_from_current_frame(&self, name: &str) -> Option<&Value> {
-        self.frame_stack.last().unwrap().environment.0.get(name)
+    fn var_from_current_frame(&self, name: &str) -> Value {
+        self.frame_stack
+            .last()
+            .unwrap()
+            .environment
+            .0
+            .get(name)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn set_or_insert_var_in_current_frame(&mut self, name: &str, value: Value) {
@@ -223,7 +230,7 @@ impl InterpreterState {
                 self.push_value(instruction.span.make_wrapped(literal.clone()));
             }
             Instruction::Push(crate::instruction::PushSource::Environment(src)) => {
-                let val = self.var_from_current_frame(src).unwrap().clone();
+                let val = self.var_from_current_frame(src);
                 self.push_value(instruction.span.make_wrapped(val));
             }
             Instruction::Pop(crate::instruction::PopDestination::Environment(dest)) => {

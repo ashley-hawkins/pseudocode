@@ -14,8 +14,9 @@ use crate::{
     util::{SourceSpan, Spanned},
 };
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub enum Value {
+    #[default]
     None,
     Number(f64),
     Bool(bool),
