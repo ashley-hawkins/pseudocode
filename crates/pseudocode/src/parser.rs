@@ -1,5 +1,6 @@
 use chumsky::{
-    input::ValueInput,
+    Parser as ChumskyParser,
+    input::{Input as ChumskyInput, ValueInput},
     pratt::{infix, left, postfix, prefix},
     prelude::*,
 };
@@ -36,29 +37,53 @@ pub enum Mode {
     ProceduralImp,
 }
 
-pub fn parse_pseudocode_program<
-    'src,
-    I: ValueInput<'src, Token = Token<'src>, Span = SourceSpan>,
->(
-    mode: Mode,
-) -> impl chumsky::prelude::Parser<
-    'src,
-    I,
-    AstRoot<'src>,
-    extra::Full<Rich<'src, Token<'src>, SourceSpan>, (), ()>,
-> {
-    let variable_access =
-        select! { token::Token::Identifier(ident) => ident }.map(Expr::VariableAccess);
+type Error<'a> = Rich<'a, Token<'a>, SourceSpan>;
+
+pub trait Input<'a>: ValueInput<'a, Token = Token<'a>, Span = SourceSpan> {}
+impl<'a, T: ValueInput<'a, Token = Token<'a>, Span = SourceSpan>> Input<'a> for T {}
+
+pub trait Parser<'a, I: Input<'a>, O>:
+    ChumskyParser<'a, I, O, extra::Err<Error<'a>>> + Clone
+{
+}
+impl<'a, I: Input<'a>, O, P: ChumskyParser<'a, I, O, extra::Err<Error<'a>>> + Clone>
+    Parser<'a, I, O> for P
+{
+}
+
+type BoxedParser<'src, I, O> = chumsky::Boxed<'src, 'src, I, O, extra::Err<Error<'src>>>;
+
+fn indented<'src, I: Input<'src>, O>(
+    parser: impl Parser<'src, I, O> + 'src,
+) -> impl Parser<'src, I, O> {
+    parser.delimited_by(just(Token::Indent), just(Token::Dedent))
+}
+
+fn ident<'src, I: Input<'src>>() -> impl Parser<'src, I, &'src str> {
+    select! { token::Token::Identifier(ident) => ident }
+}
+
+fn number_literal<'src, I: Input<'src>>() -> impl Parser<'src, I, &'src str> {
+    select! { token::Token::NumberLiteral(value) => value }
+}
+
+fn string_literal<'src, I: Input<'src>>() -> impl Parser<'src, I, &'src str> {
+    select! { token::Token::StringLiteral(value) => value }
+}
+
+fn expr_parser<'src, I: Input<'src>>(
+    procedural: bool,
+) -> impl Parser<'src, I, Spanned<Expr<'src>>> {
+    let variable_access = ident().map(Expr::VariableAccess);
 
     let boolean_literal =
         select! { token::Token::BoolLiteral(value) => value }.map(Expr::BooleanLiteral);
 
-    let number_literal = select! { token::Token::NumberLiteral(value) => value.parse().unwrap() }
-        .map(Expr::NumberLiteral);
+    let number_literal = number_literal().map(|x| Expr::NumberLiteral(x.parse().unwrap()));
 
     let value = choice((boolean_literal, number_literal, variable_access));
 
-    let expr = recursive(|expr| {
+    recursive(|expr| {
         let paren_expr = expr
             .clone()
             .delimited_by(just(Token::LRoundBracket), just(Token::RRoundBracket))
@@ -71,7 +96,7 @@ pub fn parse_pseudocode_program<
             .delimited_by(just(Token::LSquareBracket), just(Token::RSquareBracket))
             .map(Expr::ArrayLiteral);
 
-        let function_call = select! { token::Token::Identifier(name) => name }
+        let function_call = ident()
             .spanned()
             .then(
                 expr.clone()
@@ -107,7 +132,7 @@ pub fn parse_pseudocode_program<
             value.spanned(),
         ));
 
-        let atom = if mode == Mode::ProceduralImp {
+        let atom = if procedural {
             choice((function_call.spanned(), atom_common)).boxed()
         } else {
             atom_common.boxed()
@@ -329,37 +354,33 @@ pub fn parse_pseudocode_program<
             is_odd,
             is_in,
         ))
-    });
+    })
+}
 
-    let statement = recursive(|statement| {
-        let block = statement
-            .spanned()
-            .repeated()
-            .collect::<Vec<_>>()
-            .map(Block);
-
-        let indented_block = block.delimited_by(just(Token::Indent), just(Token::Dedent));
+fn statement<'src, I: Input<'src>>(
+    structural: bool,
+    expr: impl Parser<'src, I, Spanned<Expr<'src>>> + 'src,
+) -> impl Parser<'src, I, Statement<'src>> {
+    recursive(|statement| {
+        let indented_block = indented(block(statement));
 
         let assert_statement = expr
             .clone()
             .delimited_by(just([Token::Assert, Token::Colon]), just(Token::Newline))
             .map(|condition| Statement::from(AssertStatement { condition }));
 
-        let goto_statement = select! {
-            token::Token::NumberLiteral(line_num) =>  line_num.parse().unwrap()
-        }
-        .spanned()
-        .map(|line_number| Statement::from(GotoStatement { line_number }))
-        .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
+        let goto_statement = number_literal()
+            .map(|line_number| line_number.parse().unwrap())
+            .spanned()
+            .map(|line_number| Statement::from(GotoStatement { line_number }))
+            .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
 
         let debug_statement = choice((
             one_of([Token::DebugLn, Token::Debug])
                 .spanned()
                 .then(
                     choice((
-                        select! { token::Token::StringLiteral(s) => s }
-                            .map(DebugArgument::String)
-                            .spanned(),
+                        string_literal().map(DebugArgument::String).spanned(),
                         expr.clone().map(DebugArgument::Expr).spanned(),
                     ))
                     .separated_by(just(Token::Comma))
@@ -381,7 +402,7 @@ pub fn parse_pseudocode_program<
         ));
 
         let assignment_statement = choice((
-            select! { token::Token::Identifier(ident) => ident }
+            ident()
                 .then_ignore(just(Token::Assign))
                 .spanned()
                 .map(AssignmentLhs::Variable),
@@ -407,7 +428,7 @@ pub fn parse_pseudocode_program<
         .map(|(lhs, expression)| Statement::from(AssignmentStatement { lhs, expression }));
 
         let swap_statement = choice((
-            select! { token::Token::Identifier(ident) => ident }
+            ident()
                 .then_ignore(just(Token::Swap))
                 .spanned()
                 .map(AssignmentLhs::Variable),
@@ -429,7 +450,7 @@ pub fn parse_pseudocode_program<
                 }),
         ))
         .then(choice((
-            select! { token::Token::Identifier(ident) => ident }
+            ident()
                 .then_ignore(just(Token::Newline))
                 .spanned()
                 .map(AssignmentLhs::Variable),
@@ -480,7 +501,7 @@ pub fn parse_pseudocode_program<
             .map(|(condition, body)| Statement::from(WhileStatement { condition, body }));
 
         let for_statement = just(Token::For)
-            .ignore_then(select! { token::Token::Identifier(loop_var) => loop_var })
+            .ignore_then(ident())
             .then_ignore(just(token::Token::Assign))
             .then(expr.clone())
             .then_ignore(just(Token::To))
@@ -517,26 +538,45 @@ pub fn parse_pseudocode_program<
         let jumpy_statement = choice((common_statement.clone(), goto_statement));
         let structured_statement = choice((common_statement, for_statement, while_statement));
 
-        if mode == Mode::JumpyImp {
+        if !structural {
             jumpy_statement.boxed()
         } else {
             structured_statement.boxed()
         }
-    });
+    })
+}
 
-    let block = statement
+fn block<'src, I: Input<'src>>(
+    statement: impl Parser<'src, I, Statement<'src>> + 'src,
+) -> impl Parser<'src, I, Block<'src>> {
+    statement
         .spanned()
         .repeated()
         .collect::<Vec<_>>()
-        .map(Block);
-    let indented_block = block
-        .clone()
-        .delimited_by(just(Token::Indent), just(Token::Dedent));
+        .map(Block)
+}
+
+pub fn parse_basic_program<'src, I: Input<'src>>(
+    structural: bool,
+) -> impl Parser<'src, I, AstRoot<'src>> {
+    let expr = parse_base_expr();
+    let block = block(statement(structural, expr));
+    block
+        .spanned()
+        .then_ignore(end())
+        .map(|main_algorithm| AstRoot {
+            procedures: vec![],
+            main_algorithm,
+        })
+}
+
+pub fn parse_procedural_program<'src, I: Input<'src>>() -> impl Parser<'src, I, AstRoot<'src>> {
+    let block = block(statement(true, expr_parser(true)));
 
     let procedure = just(Token::Procedure)
-        .ignore_then(select! { token::Token::Identifier(name) => name }.spanned())
+        .ignore_then(ident().spanned())
         .then(
-            select! { token::Token::Identifier(param) => param }
+            ident()
                 .spanned()
                 .separated_by(just(Token::Comma))
                 .collect::<Vec<_>>()
@@ -546,36 +586,39 @@ pub fn parse_pseudocode_program<
                 .spanned(),
         )
         .then_ignore(just([Token::Colon, Token::Newline]))
-        .then(indented_block.clone())
+        .then(indented(block.clone()))
         .map(|((name, parameters), body)| ProcedureDefinition {
             name,
             parameters,
             body,
         });
+    procedure
+        .spanned()
+        .repeated()
+        .collect::<Vec<_>>()
+        .then(
+            just([Token::Algorithm, Token::Colon, Token::Newline])
+                .ignore_then(indented(block))
+                .spanned(),
+        )
+        .then_ignore(end())
+        .map(|(procedures, statements)| AstRoot {
+            procedures,
+            main_algorithm: statements,
+        })
+}
 
-    if mode == Mode::ProceduralImp {
-        procedure
-            .spanned()
-            .repeated()
-            .collect::<Vec<_>>()
-            .then(
-                just([Token::Algorithm, Token::Colon, Token::Newline])
-                    .ignore_then(indented_block)
-                    .spanned(),
-            )
-            .map(|(procedures, statements)| AstRoot {
-                procedures,
-                main_algorithm: statements,
-            })
-            .boxed()
-    } else {
-        block
-            .spanned()
-            .map(|main_algorithm| AstRoot {
-                procedures: vec![],
-                main_algorithm,
-            })
-            .boxed()
+pub fn parse_base_expr<'src, I: Input<'src>>() -> impl Parser<'src, I, Spanned<Expr<'src>>> {
+    expr_parser(false)
+}
+
+pub fn parse_pseudocode_program<'src, I: Input<'src>>(
+    mode: Mode,
+) -> BoxedParser<'src, I, AstRoot<'src>> {
+    match mode {
+        Mode::JumpyImp => parse_basic_program(false).boxed(),
+        Mode::StructuredImp => parse_basic_program(true).boxed(),
+        Mode::ProceduralImp => parse_procedural_program().boxed(),
     }
 }
 
