@@ -88,6 +88,7 @@ impl SourceLocation<OneIndexed> {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct SourceSpan {
+    pub context: SourceContext,
     pub start: SourceLocation,
     pub end: SourceLocation,
 }
@@ -107,11 +108,16 @@ impl std::fmt::Debug for SourceSpan {
 
 impl SourceSpan {
     pub fn new(start: SourceLocation, end: SourceLocation) -> Self {
-        SourceSpan { start, end }
+        SourceSpan {
+            context: SourceContext::None,
+            start,
+            end,
+        }
     }
 
     pub fn new_from_range(range: Range<usize>, line_offsets: &[usize]) -> Self {
         SourceSpan {
+            context: SourceContext::None,
             start: offset_to_source_location(range.start, line_offsets),
             end: offset_to_source_location(range.end, line_offsets),
         }
@@ -123,6 +129,7 @@ impl SourceSpan {
 
     pub fn eof() -> Self {
         SourceSpan {
+            context: SourceContext::None,
             start: SourceLocation::eof(),
             end: SourceLocation::eof(),
         }
@@ -161,24 +168,36 @@ pub fn source_byte_range_to_source_span(
     line_offsets: &[usize],
 ) -> SourceSpan {
     SourceSpan {
+        context: SourceContext::None,
         start: offset_to_source_location(token_range.start, line_offsets),
         end: offset_to_source_location(token_range.end, line_offsets),
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum SourceContext {
+    // The context is the input file
+    #[default]
+    None,
+    CommandLineArgument(u32),
+}
+
 impl Span for SourceSpan {
-    type Context = ();
+    type Context = SourceContext;
 
     type Offset = SourceLocation;
 
     fn new(_context: Self::Context, range: std::ops::Range<Self::Offset>) -> Self {
         Self {
+            context: _context,
             start: range.start,
             end: range.end,
         }
     }
 
-    fn context(&self) -> Self::Context {}
+    fn context(&self) -> Self::Context {
+        self.context
+    }
 
     fn start(&self) -> Self::Offset {
         self.start
