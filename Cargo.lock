@@ -310,7 +310,6 @@ dependencies = [
 name = "pseudocode"
 version = "0.1.0"
 dependencies = [
- "ariadne",
  "chumsky",
  "derive_more",
  "logos",

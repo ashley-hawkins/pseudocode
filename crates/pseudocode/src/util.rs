@@ -117,6 +117,10 @@ impl SourceSpan {
         }
     }
 
+    pub fn into_range(&self) -> Range<usize> {
+        self.start.bytes..self.end.bytes
+    }
+
     pub fn eof() -> Self {
         SourceSpan {
             start: SourceLocation::eof(),

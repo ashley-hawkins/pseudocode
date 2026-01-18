@@ -37,7 +37,7 @@ pub enum Mode {
     ProceduralImp,
 }
 
-type Error<'a> = Rich<'a, Token<'a>, SourceSpan>;
+pub type Error<'a> = Rich<'a, Token<'a>, SourceSpan>;
 
 pub trait Input<'a>: ValueInput<'a, Token = Token<'a>, Span = SourceSpan> {}
 impl<'a, T: ValueInput<'a, Token = Token<'a>, Span = SourceSpan>> Input<'a> for T {}
@@ -46,6 +46,7 @@ pub trait Parser<'a, I: Input<'a>, O>:
     ChumskyParser<'a, I, O, extra::Err<Error<'a>>> + Clone
 {
 }
+
 impl<'a, I: Input<'a>, O, P: ChumskyParser<'a, I, O, extra::Err<Error<'a>>> + Clone>
     Parser<'a, I, O> for P
 {
