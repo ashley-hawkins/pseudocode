@@ -13,7 +13,7 @@ use crate::{
         WhileStatement,
     },
     token::{self, Token},
-    util::{SourceSpan, Spanned},
+    util::{SourceContext, SourceSpan, Spanned},
 };
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
@@ -72,9 +72,7 @@ fn string_literal<'src, I: Input<'src>>() -> impl Parser<'src, I, &'src str> {
     select! { token::Token::StringLiteral(value) => value }
 }
 
-fn expr_parser<'src, I: Input<'src>>(
-    procedural: bool,
-) -> impl Parser<'src, I, Spanned<Expr<'src>>> {
+fn expr<'src, I: Input<'src>>(procedural: bool) -> impl Parser<'src, I, Spanned<Expr<'src>>> {
     let variable_access = ident().map(Expr::VariableAccess);
 
     let boolean_literal =
@@ -358,6 +356,10 @@ fn expr_parser<'src, I: Input<'src>>(
     })
 }
 
+pub fn base_expr<'src, I: Input<'src>>() -> impl Parser<'src, I, Spanned<Expr<'src>>> {
+    expr(false)
+}
+
 fn statement<'src, I: Input<'src>>(
     structural: bool,
     expr: impl Parser<'src, I, Spanned<Expr<'src>>> + 'src,
@@ -544,10 +546,10 @@ fn block<'src, I: Input<'src>>(
         .map(Block)
 }
 
-pub fn parse_basic_program<'src, I: Input<'src>>(
+pub fn basic_program<'src, I: Input<'src>>(
     structural: bool,
 ) -> impl Parser<'src, I, AstRoot<'src>> {
-    let expr = parse_base_expr();
+    let expr = base_expr();
     let block = block(statement(structural, expr));
     block
         .then_ignore(just(Token::Newline).ignored().or(end()))
@@ -558,8 +560,8 @@ pub fn parse_basic_program<'src, I: Input<'src>>(
         })
 }
 
-pub fn parse_procedural_program<'src, I: Input<'src>>() -> impl Parser<'src, I, AstRoot<'src>> {
-    let block = block(statement(true, expr_parser(true)));
+pub fn procedural_program<'src, I: Input<'src>>() -> impl Parser<'src, I, AstRoot<'src>> {
+    let block = block(statement(true, expr(true)));
 
     let procedure = just(Token::Procedure)
         .ignore_then(ident().spanned())
@@ -597,21 +599,30 @@ pub fn parse_procedural_program<'src, I: Input<'src>>() -> impl Parser<'src, I, 
         })
 }
 
-pub fn parse_base_expr<'src, I: Input<'src>>() -> impl Parser<'src, I, Spanned<Expr<'src>>> {
-    expr_parser(false)
-}
-
-pub fn parse_pseudocode_program<'src, I: Input<'src>>(
-    mode: Mode,
-) -> BoxedParser<'src, I, AstRoot<'src>> {
+pub fn pseudocode_program<'src, I: Input<'src>>(mode: Mode) -> BoxedParser<'src, I, AstRoot<'src>> {
     match mode {
-        Mode::JumpyImp => parse_basic_program(false).boxed(),
-        Mode::StructuredImp => parse_basic_program(true).boxed(),
-        Mode::ProceduralImp => parse_procedural_program().boxed(),
+        Mode::JumpyImp => basic_program(false).boxed(),
+        Mode::StructuredImp => basic_program(true).boxed(),
+        Mode::ProceduralImp => procedural_program().boxed(),
     }
 }
 
-pub fn parse_str(
+// Used for assignment from cmdline in the form varname:expression, e.g. "x:100" or "arr:[1, 2, 3]"
+pub fn cmdline_assignment<'src, I: Input<'src>>()
+-> impl Parser<'src, I, Spanned<AssignmentStatement<'src>>> {
+    ident()
+        .spanned()
+        .then_ignore(just(Token::Colon))
+        .then(expr(false))
+        .then_ignore(end())
+        .map(|(name, expression)| AssignmentStatement {
+            lhs: AssignmentLhs::Variable(name),
+            expression,
+        })
+        .spanned()
+}
+
+pub fn parse_program_from_str(
     src: &str,
     mode: Mode,
 ) -> ParseResult<AstRoot<'_>, Rich<'_, Token<'_>, SourceSpan>> {
@@ -623,7 +634,28 @@ pub fn parse_str(
             (token, span)
         });
 
-    let parser = parse_pseudocode_program(mode);
+    let parser = pseudocode_program(mode);
+
+    parser.parse(token_stream)
+}
+
+pub fn parse_cmdline_assignment_from_str(
+    src: &str,
+    id: u32,
+) -> ParseResult<Spanned<AssignmentStatement<'_>>, Rich<'_, Token<'_>, SourceSpan>> {
+    let lexer = crate::lexer::lex_str(src)
+        .map(|(res, span)| (res.unwrap_or_else(Token::Error), span))
+        .map(move |(token, mut span)| {
+            span.context = SourceContext::CommandLineArgument(id);
+            (token, span)
+        });
+
+    let token_stream = chumsky::input::Stream::from_iter(lexer)
+        .map(SourceSpan::eof(), |(token, span): (Token, SourceSpan)| {
+            (token, span)
+        });
+
+    let parser = cmdline_assignment();
 
     parser.parse(token_stream)
 }
@@ -661,7 +693,7 @@ Algorithm:
     _ <- SyntaxTest(5, 10)
 "##;
 
-        let result = parse_str(source, Mode::default());
+        let result = parse_program_from_str(source, Mode::default());
 
         println!("{:#?}", result);
 
@@ -669,5 +701,26 @@ Algorithm:
         let ast_root = result.unwrap();
 
         todo!();
+    }
+
+    #[test]
+    fn test_cmdline_assignment() {
+        let source = "arr:[1, 2, 3, 4]";
+
+        let lexer = crate::lexer::lex_str(source)
+            .map(|(res, span)| (res.unwrap_or_else(Token::Error), span));
+
+        let token_stream = chumsky::input::Stream::from_iter(lexer)
+            .map(SourceSpan::eof(), |(token, span): (Token, SourceSpan)| {
+                (token, span)
+            });
+
+        let parser = cmdline_assignment();
+
+        let result = parser.parse(token_stream);
+
+        println!("{:#?}", result);
+
+        assert!(result.output().is_some());
     }
 }

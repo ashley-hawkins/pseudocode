@@ -8,6 +8,7 @@ use crate::{
     util::{SourceSpan, Spanned},
 };
 
+#[derive(Default, Debug)]
 pub struct Environment(HashMap<String, Value>);
 
 #[derive(Debug)]
@@ -129,23 +130,48 @@ fn unary_operation(
 
 pub enum StepResult {
     Continued,
-    Halted,
+    Halted(Environment),
 }
 
-pub fn run_program(program: &Program) -> Result<Value, RuntimeError> {
-    let mut state = InterpreterState::new();
+pub struct ProgramResult {
+    pub environment: Environment,
+    pub return_value: Value,
+}
 
-    while let StepResult::Continued = state.step(program)? {}
+pub fn run_program(program: &Program) -> Result<ProgramResult, RuntimeError> {
+    run_program_with_environment(program, Environment::default())
+}
 
-    Ok(state.pop_value().inner)
+pub fn run_program_with_environment(
+    program: &Program,
+    environment: Environment,
+) -> Result<ProgramResult, RuntimeError> {
+    let mut state = InterpreterState::new_with_environment(environment);
+
+    let final_env = loop {
+        match state.step(program)? {
+            StepResult::Continued => {}
+            StepResult::Halted(final_env) => break final_env,
+        }
+    };
+    let return_value = state.pop_value().inner;
+
+    Ok(ProgramResult {
+        environment: final_env,
+        return_value,
+    })
 }
 
 impl InterpreterState {
     pub fn new() -> Self {
+        Self::new_with_environment(Environment::default())
+    }
+
+    pub fn new_with_environment(env: Environment) -> Self {
         Self {
             instruction_offset: 0,
             frame_stack: vec![Frame {
-                environment: Environment(HashMap::new()),
+                environment: env,
                 return_address: None,
             }],
             expr_stack: Vec::new(),
@@ -176,7 +202,7 @@ impl InterpreterState {
         frame.environment.0.insert(name.to_string(), value);
     }
 
-    fn push_frame(&mut self) {
+    fn push_empty_frame(&mut self) {
         self.frame_stack.push(Frame {
             environment: Environment(HashMap::new()),
             return_address: Some(self.instruction_offset + 1),
@@ -217,7 +243,7 @@ impl InterpreterState {
             panic!("Function called with incorrect number of parameters");
         }
 
-        self.push_frame();
+        self.push_empty_frame();
 
         ControlFlow::Jump(function_offset + 1)
     }
@@ -398,7 +424,7 @@ impl InterpreterState {
                         self.instruction_offset = return_address;
                     }
                     None => {
-                        return Ok(StepResult::Halted);
+                        return Ok(StepResult::Halted(frame.environment));
                     }
                 }
             }

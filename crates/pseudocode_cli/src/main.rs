@@ -3,12 +3,14 @@ pub mod error_handling;
 use std::path::PathBuf;
 use std::{fs, process::ExitCode};
 
-use ariadne::{Color, Label, Report, ReportKind, sources};
-use chumsky::error::RichReason;
+use chumsky::span::WrappingSpan;
 use clap::Parser;
+use pseudocode::interpreter::{Environment, run_program, run_program_with_environment};
+use pseudocode::parser::{AstRoot, parse_cmdline_assignment_from_str};
+use pseudocode::statement::{Block, Statement};
+use pseudocode::util::Spanned;
 use pseudocode::{
-    instruction::generate_instructions_for_ast, interpreter::RuntimeError,
-    type_checker::ValidateTypes, util::SourceSpan,
+    instruction::generate_instructions_for_ast, type_checker::ValidateTypes, util::SourceSpan,
 };
 
 use crate::error_handling::{output_parse_errors, output_runtime_error, output_type_errors};
@@ -26,6 +28,8 @@ struct Cli {
     file: PathBuf,
     #[arg(short, long, value_enum, default_value_t = ParseMode::Procedural)]
     mode: ParseMode,
+
+    initializers: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -41,7 +45,48 @@ fn main() -> ExitCode {
 
     let file_name = cli.file.to_string_lossy().into_owned();
 
-    let result = pseudocode::parser::parse_str(
+    let Some(initializers) = cli
+        .initializers
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let result = parse_cmdline_assignment_from_str(s, i as u32);
+
+            let errors = result.errors().collect::<Vec<_>>();
+
+            output_parse_errors(s, format!("initializer {}", i + 1), &errors);
+
+            result
+                .into_output()
+                .map(|spanned| spanned.span.make_wrapped(Statement::from(spanned.inner)))
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return ExitCode::FAILURE;
+    };
+
+    let environment = match initializers.is_empty() {
+        true => Environment::default(),
+        false => {
+            let init_prog_ast = AstRoot {
+                procedures: vec![],
+                main_algorithm: Spanned {
+                    span: SourceSpan::eof(),
+                    inner: Block(initializers),
+                },
+            };
+
+            run_program(&generate_instructions_for_ast(&init_prog_ast))
+                .unwrap()
+                .environment
+        }
+    };
+
+    let initial_environment = environment;
+
+    println!("Initial environment: {:#?}", initial_environment);
+
+    let result = pseudocode::parser::parse_program_from_str(
         &src,
         match cli.mode {
             ParseMode::Jumpy => pseudocode::parser::Mode::JumpyImp,
@@ -69,9 +114,9 @@ fn main() -> ExitCode {
     let program = generate_instructions_for_ast(ast);
     println!("{:#?}", program.into_iter().enumerate().collect::<Vec<_>>());
 
-    match pseudocode::interpreter::run_program(&generate_instructions_for_ast(ast)) {
-        Ok(value) => {
-            println!("Program finished with value: {:#?}", value);
+    match run_program_with_environment(&generate_instructions_for_ast(ast), initial_environment) {
+        Ok(result) => {
+            println!("Program finished with value: {:#?}", result.return_value);
         }
         Err(e) => {
             output_runtime_error(&src, file_name.clone(), &e);
