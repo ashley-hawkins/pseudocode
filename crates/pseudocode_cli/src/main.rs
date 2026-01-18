@@ -1,19 +1,10 @@
-pub mod error_handling;
-
 use std::path::PathBuf;
 use std::{fs, process::ExitCode};
 
-use chumsky::span::WrappingSpan;
 use clap::Parser;
-use pseudocode::interpreter::{Environment, run_program, run_program_with_environment};
-use pseudocode::parser::{AstRoot, parse_cmdline_assignment_from_str};
-use pseudocode::statement::{Block, Statement};
-use pseudocode::util::Spanned;
-use pseudocode::{
-    instruction::generate_instructions_for_ast, type_checker::ValidateTypes, util::SourceSpan,
-};
-
-use crate::error_handling::{output_parse_errors, output_runtime_error, output_type_errors};
+use pseudocode::instruction::generate_instructions_for_ast;
+use pseudocode::interpreter::run_program_with_environment;
+use pseudocode_frontend::{create_initial_environment, eprint_runtime_error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 enum ParseMode {
@@ -23,7 +14,6 @@ enum ParseMode {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "pseudocode-parse")]
 struct Cli {
     file: PathBuf,
 
@@ -72,63 +62,27 @@ fn main() -> ExitCode {
 
     let file_name = cli.file.to_string_lossy().into_owned();
 
-    let Some(initializers) = cli
-        .initializers
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let result = parse_cmdline_assignment_from_str(s, i as u32);
-
-            let errors = result.errors().collect::<Vec<_>>();
-
-            output_parse_errors(s, format!("initializer {}", i + 1), &errors);
-
-            result
-                .into_output()
-                .map(|spanned| spanned.span.make_wrapped(Statement::from(spanned.inner)))
-        })
-        .collect::<Option<Vec<_>>>()
+    let Some(initial_environment) =
+        create_initial_environment(&cli.initializers, &mut std::io::stdout())
     else {
         return ExitCode::FAILURE;
     };
-
-    let environment = match initializers.is_empty() {
-        true => Environment::default(),
-        false => {
-            let init_prog_ast = AstRoot {
-                procedures: vec![],
-                main_algorithm: Spanned {
-                    span: SourceSpan::eof(),
-                    inner: Block(initializers),
-                },
-            };
-
-            run_program(&generate_instructions_for_ast(&init_prog_ast))
-                .unwrap()
-                .environment
-        }
-    };
-
-    let initial_environment = environment;
 
     if cli.debug {
         println!("Initial environment:");
         println!("{:#?}", initial_environment);
     }
 
-    let result = pseudocode::parser::parse_program_from_str(
+    let Some(ast) = pseudocode_frontend::parse_source_to_ast(
         &src,
+        file_name.clone(),
         match mode {
             ParseMode::Jumpy => pseudocode::parser::Mode::JumpyImp,
             ParseMode::Structured => pseudocode::parser::Mode::StructuredImp,
             ParseMode::Procedural => pseudocode::parser::Mode::ProceduralImp,
         },
-    );
-
-    let Some(ast) = result.output() else {
-        let errors = result.errors().collect::<Vec<_>>();
-        output_parse_errors(&src, file_name.clone(), &errors);
-
+        &mut std::io::stdout(),
+    ) else {
         return ExitCode::FAILURE;
     };
 
@@ -137,25 +91,18 @@ fn main() -> ExitCode {
         println!("{:#?}", ast);
     }
 
-    let type_errors = ast.validate_types();
-
-    if !type_errors.is_empty() {
-        output_type_errors(&src, file_name.clone(), &type_errors);
-        return ExitCode::FAILURE;
-    }
-
-    let program = generate_instructions_for_ast(ast);
+    let program = generate_instructions_for_ast(&ast);
     if cli.debug {
         println!("Generated instructions:");
-        println!("{:#?}", program.into_iter().enumerate().collect::<Vec<_>>());
+        println!("{:#?}", program.iter().enumerate().collect::<Vec<_>>());
     }
 
-    match run_program_with_environment(&generate_instructions_for_ast(ast), initial_environment) {
+    match run_program_with_environment(&program, initial_environment) {
         Ok(result) => {
             println!("Program finished with value: {}", result.return_value);
         }
         Err(e) => {
-            output_runtime_error(&src, file_name.clone(), &e);
+            eprint_runtime_error(&src, file_name.clone(), &e);
             return ExitCode::FAILURE;
         }
     }

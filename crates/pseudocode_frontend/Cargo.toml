@@ -1,0 +1,10 @@
+[package]
+name = "pseudocode_frontend"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+pseudocode.workspace = true
+chumsky.workspace = true
+ariadne = "0.6.0"

@@ -320,9 +320,18 @@ dependencies = [
 name = "pseudocode_cli"
 version = "0.1.0"
 dependencies = [
- "ariadne",
  "chumsky",
  "clap",
+ "pseudocode",
+ "pseudocode_frontend",
+]
+
+[[package]]
+name = "pseudocode_frontend"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "chumsky",
  "pseudocode",
 ]
 

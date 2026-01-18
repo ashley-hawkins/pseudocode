@@ -146,10 +146,25 @@ pub fn run_program_with_environment(
     program: &Program,
     environment: Environment,
 ) -> Result<ProgramResult, RuntimeError> {
+    run_program_with_environment_and_print_dest(program, environment, &mut io::stdout())
+}
+
+pub fn run_program_with_print_dest(
+    program: &Program,
+    print_dest: &mut impl std::io::Write,
+) -> Result<ProgramResult, RuntimeError> {
+    run_program_with_environment_and_print_dest(program, Environment::default(), print_dest)
+}
+
+pub fn run_program_with_environment_and_print_dest(
+    program: &Program,
+    environment: Environment,
+    print_dest: &mut impl std::io::Write,
+) -> Result<ProgramResult, RuntimeError> {
     let mut state = InterpreterState::new_with_environment(environment);
 
     let final_env = loop {
-        match state.step(program)? {
+        match state.step_with_print_dest(program, print_dest)? {
             StepResult::Continued => {}
             StepResult::Halted(final_env) => break final_env,
         }

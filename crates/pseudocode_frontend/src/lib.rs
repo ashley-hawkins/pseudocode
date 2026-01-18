@@ -1,13 +1,25 @@
+use std::borrow::Borrow;
+
 use ariadne::{Color, Label, Report, ReportKind, sources};
-use chumsky::error::RichReason;
+use chumsky::{error::RichReason, span::WrappingSpan};
 use pseudocode::{
     expr::{ArrayIndex, Expr},
-    interpreter::RuntimeError,
-    type_checker::{TypeError, TypeErrorContext},
+    instruction::generate_instructions_for_ast,
+    interpreter::{Environment, RuntimeError, run_program},
+    parser::{AstRoot, Mode, parse_cmdline_assignment_from_str},
+    statement::{Block, Statement},
+    type_checker::{TypeError, TypeErrorContext, ValidateTypes},
+    util::{SourceSpan, Spanned},
 };
 
-pub fn output_type_errors<'a>(src: &'a str, file_name: String, type_errors: &[TypeError<'a>]) {
+pub fn write_type_errors<'a>(
+    src: &'a str,
+    file_name: String,
+    type_errors: &[impl Borrow<TypeError<'a>>],
+    w: &mut impl std::io::Write,
+) {
     for e in type_errors {
+        let e = e.borrow();
         let hint_span = (
             file_name.clone(),
             match &e.context {
@@ -126,12 +138,36 @@ pub fn output_type_errors<'a>(src: &'a str, file_name: String, type_errors: &[Ty
         ])
         .finish();
 
-        report.print(sources([(file_name.clone(), src)])).unwrap();
+        report
+            .write(sources([(file_name.clone(), src)]), &mut *w)
+            .unwrap();
     }
 }
 
-pub fn output_parse_errors(src: &str, file_name: String, errors: &[&pseudocode::parser::Error]) {
+pub fn print_type_errors<'a>(
+    src: &'a str,
+    file_name: String,
+    type_errors: &[impl Borrow<TypeError<'a>>],
+) {
+    write_type_errors(src, file_name, type_errors, &mut std::io::stdout());
+}
+
+pub fn eprint_type_errors<'a>(
+    src: &'a str,
+    file_name: String,
+    type_errors: &[impl Borrow<TypeError<'a>>],
+) {
+    write_type_errors(src, file_name, type_errors, &mut std::io::stderr());
+}
+
+pub fn write_parse_errors<'src>(
+    src: &'src str,
+    file_name: String,
+    errors: &[impl Borrow<pseudocode::parser::Error<'src>>],
+    w: &mut impl std::io::Write,
+) {
     for error in errors {
+        let error = error.borrow();
         Report::build(
             ReportKind::Error,
             (file_name.clone(), error.span().into_range()),
@@ -153,12 +189,33 @@ pub fn output_parse_errors(src: &str, file_name: String, errors: &[&pseudocode::
                 .with_color(Color::Red),
         )
         .finish()
-        .print(sources([(file_name.clone(), src)]))
+        .write(sources([(file_name.clone(), src)]), &mut *w)
         .unwrap()
     }
 }
 
-pub fn output_runtime_error(src: &str, file_name: String, error: &RuntimeError) {
+pub fn print_parse_errors<'src>(
+    src: &'src str,
+    file_name: String,
+    errors: &[impl Borrow<pseudocode::parser::Error<'src>>],
+) {
+    write_parse_errors(src, file_name, errors, &mut std::io::stdout());
+}
+
+pub fn eprint_parse_errors<'src>(
+    src: &'src str,
+    file_name: String,
+    errors: &[impl Borrow<pseudocode::parser::Error<'src>>],
+) {
+    write_parse_errors(src, file_name, errors, &mut std::io::stderr());
+}
+
+pub fn write_runtime_error(
+    src: &str,
+    file_name: String,
+    error: &RuntimeError,
+    w: &mut impl std::io::Write,
+) {
     match error {
         RuntimeError::TypeError {
             expected,
@@ -184,7 +241,81 @@ pub fn output_runtime_error(src: &str, file_name: String, error: &RuntimeError) 
             )
             .finish();
 
-            report.print(sources([(file_name.clone(), src)])).unwrap();
+            report
+                .write(sources([(file_name.clone(), src)]), &mut *w)
+                .unwrap();
         }
     }
+}
+
+pub fn print_runtime_error(src: &str, file_name: String, error: &RuntimeError) {
+    write_runtime_error(src, file_name, error, &mut std::io::stdout());
+}
+
+pub fn eprint_runtime_error(src: &str, file_name: String, error: &RuntimeError) {
+    write_runtime_error(src, file_name, error, &mut std::io::stderr());
+}
+
+pub fn create_initial_environment(
+    initializers: &[String],
+    w: &mut impl std::io::Write,
+) -> Option<Environment> {
+    let initializers = initializers
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let result = parse_cmdline_assignment_from_str(s, i as u32);
+
+            let errors = result.errors().collect::<Vec<_>>();
+
+            write_parse_errors(s, format!("initializer {}", i + 1), &errors, &mut *w);
+
+            result
+                .into_output()
+                .map(|spanned| spanned.span.make_wrapped(Statement::from(spanned.inner)))
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(if initializers.is_empty() {
+        Environment::default()
+    } else {
+        let init_prog_ast = AstRoot {
+            procedures: vec![],
+            main_algorithm: Spanned {
+                span: SourceSpan::eof(),
+                inner: Block(initializers),
+            },
+        };
+
+        run_program(&generate_instructions_for_ast(&init_prog_ast))
+            .unwrap()
+            .environment
+    })
+}
+
+pub fn parse_source_to_ast<'src>(
+    src: &'src str,
+    file_name: String,
+    mode: Mode,
+    w: &mut impl std::io::Write,
+) -> Option<AstRoot<'src>> {
+    let result = pseudocode::parser::parse_program_from_str(src, mode);
+
+    let ast = match result.into_result() {
+        Ok(ast) => ast,
+        Err(errors) => {
+            eprint_parse_errors(src, file_name.clone(), &errors);
+
+            return None;
+        }
+    };
+
+    let type_errors = ast.validate_types();
+
+    if !type_errors.is_empty() {
+        eprint_type_errors(src, file_name, &type_errors);
+        return None;
+    }
+
+    Some(ast)
 }
