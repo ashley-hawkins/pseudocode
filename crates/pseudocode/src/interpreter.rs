@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io};
 
 use chumsky::span::WrappingSpan;
 
@@ -248,7 +248,11 @@ impl InterpreterState {
         ControlFlow::Jump(function_offset + 1)
     }
 
-    fn run_instruction(&mut self, program: &Program) -> Result<ControlFlow, RuntimeError> {
+    fn run_instruction(
+        &mut self,
+        program: &Program,
+        print_dest: &mut impl std::io::Write,
+    ) -> Result<ControlFlow, RuntimeError> {
         let instruction = &program[self.instruction_offset];
 
         match &instruction.inner {
@@ -377,21 +381,21 @@ impl InterpreterState {
                         crate::instruction::DebugArgSource::StringLiteral(s) => print!("{}", s),
                         crate::instruction::DebugArgSource::Stack => {
                             let value = self.pop_value();
-                            print!("{}", value.inner);
+                            write!(print_dest, "{}", value.inner).unwrap();
                         }
                     }
                 }
 
                 if *with_newline {
-                    println!();
+                    writeln!(print_dest).unwrap();
                 }
             }
             Instruction::DebugStack => {
-                println!("--- Stack Dump ---");
+                writeln!(print_dest, "--- Stack Dump ---").unwrap();
                 for (i, val) in self.expr_stack.iter().enumerate() {
-                    println!("{}: {}", i, val.inner);
+                    writeln!(print_dest, "{}: {}", i, val.inner).unwrap();
                 }
-                println!("------------------");
+                writeln!(print_dest, "------------------").unwrap();
             }
             crate::instruction::InstructionGeneric::Assert => {
                 let condition = self.pop_value().ensure_bool()?;
@@ -407,8 +411,12 @@ impl InterpreterState {
         Ok(ControlFlow::Continue)
     }
 
-    pub fn step(&mut self, program: &Program) -> Result<StepResult, RuntimeError> {
-        let control_flow = self.run_instruction(program)?;
+    pub fn step_with_print_dest(
+        &mut self,
+        program: &Program,
+        print_dest: &mut impl std::io::Write,
+    ) -> Result<StepResult, RuntimeError> {
+        let control_flow = self.run_instruction(program, print_dest)?;
 
         match control_flow {
             ControlFlow::Continue => {
@@ -431,6 +439,10 @@ impl InterpreterState {
         }
 
         Ok(StepResult::Continued)
+    }
+
+    pub fn step(&mut self, program: &Program) -> Result<StepResult, RuntimeError> {
+        self.step_with_print_dest(program, &mut io::stdout())
     }
 }
 
