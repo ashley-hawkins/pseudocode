@@ -27,6 +27,9 @@ enum ParseMode {
 struct Cli {
     file: PathBuf,
 
+    #[arg(long, default_value_t = false)]
+    debug: bool,
+
     #[arg(short, long, value_enum)]
     mode: Option<ParseMode>,
 
@@ -108,7 +111,10 @@ fn main() -> ExitCode {
 
     let initial_environment = environment;
 
-    println!("Initial environment: {:#?}", initial_environment);
+    if cli.debug {
+        println!("Initial environment:");
+        println!("{:#?}", initial_environment);
+    }
 
     let result = pseudocode::parser::parse_program_from_str(
         &src,
@@ -126,7 +132,10 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    println!("{:#?}", ast);
+    if cli.debug {
+        println!("Parsed AST:");
+        println!("{:#?}", ast);
+    }
 
     let type_errors = ast.validate_types();
 
@@ -136,7 +145,10 @@ fn main() -> ExitCode {
     }
 
     let program = generate_instructions_for_ast(ast);
-    println!("{:#?}", program.into_iter().enumerate().collect::<Vec<_>>());
+    if cli.debug {
+        println!("Generated instructions:");
+        println!("{:#?}", program.into_iter().enumerate().collect::<Vec<_>>());
+    }
 
     match run_program_with_environment(&generate_instructions_for_ast(ast), initial_environment) {
         Ok(result) => {
