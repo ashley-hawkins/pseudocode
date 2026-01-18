@@ -26,8 +26,9 @@ enum ParseMode {
 #[command(name = "pseudocode-parse")]
 struct Cli {
     file: PathBuf,
-    #[arg(short, long, value_enum, default_value_t = ParseMode::Procedural)]
-    mode: ParseMode,
+
+    #[arg(short, long, value_enum)]
+    mode: Option<ParseMode>,
 
     initializers: Vec<String>,
 }
@@ -40,6 +41,29 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("Error reading file {}: {}", cli.file.display(), e);
             return ExitCode::FAILURE;
+        }
+    };
+
+    let mode = match cli.mode {
+        Some(m) => m,
+        None => {
+            let ext = cli.file.extension().map(|s| s.to_string_lossy());
+            match ext.as_ref().map(|s| s.as_ref()) {
+                Some("ji") | Some("jumpyimp") => ParseMode::Jumpy,
+                Some("si") | Some("structimp") | Some("structuredimp") => ParseMode::Structured,
+                Some("pi")
+                | Some("procimp")
+                | Some("proceduralimp")
+                | Some("ri")
+                | Some("recimp")
+                | Some("recursiveimp") => ParseMode::Procedural,
+                _ => {
+                    println!(
+                        "Warning: Could not determine pseudocode variant of input file. Please specify explicitly with --mode. Falling back to ProceduralImp."
+                    );
+                    ParseMode::Procedural
+                }
+            }
         }
     };
 
@@ -88,7 +112,7 @@ fn main() -> ExitCode {
 
     let result = pseudocode::parser::parse_program_from_str(
         &src,
-        match cli.mode {
+        match mode {
             ParseMode::Jumpy => pseudocode::parser::Mode::JumpyImp,
             ParseMode::Structured => pseudocode::parser::Mode::StructuredImp,
             ParseMode::Procedural => pseudocode::parser::Mode::ProceduralImp,
@@ -116,7 +140,7 @@ fn main() -> ExitCode {
 
     match run_program_with_environment(&generate_instructions_for_ast(ast), initial_environment) {
         Ok(result) => {
-            println!("Program finished with value: {:#?}", result.return_value);
+            println!("Program finished with value: {}", result.return_value);
         }
         Err(e) => {
             output_runtime_error(&src, file_name.clone(), &e);

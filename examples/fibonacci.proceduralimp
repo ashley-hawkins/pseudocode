@@ -1,0 +1,18 @@
+Procedure fib(x):
+    if x ≤ 1 then
+        return x
+
+    a <- 0
+    b <- 1
+
+    for _ <- 2 to x do
+        c <- a + b
+        a <- b
+        b <- c
+
+    return b
+
+//  input: n
+// output: nth term of the Fibonacci sequence
+Algorithm:
+    return fib(n)

@@ -1,0 +1,8 @@
+Procedure fib(x):
+    if x <= 1 then
+        return x
+    return fib(x - 1) + fib(x - 2)
+
+// input: n
+Algorithm:
+    return fib(n)

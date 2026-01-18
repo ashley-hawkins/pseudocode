@@ -1,0 +1,8 @@
+//  input: an integer, n ≥ 0
+// output: true if n is even, false otherwise
+currentVal <- n
+
+while currentVal > 1 do
+    currentVal <- currentVal - 2
+
+return currentVal = 0

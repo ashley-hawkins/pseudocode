@@ -1,0 +1,8 @@
+// DEBUGLN statement is not a part of the pseudocode languages, but is provided in the implementation for demonstration and debugging purposes
+
+if x = 1 then
+    DEBUGLN "x is 1"
+else if x = 2 then
+    DEBUGLN "x is 2"
+else
+    DEBUGLN "x has some other value"
