@@ -421,17 +421,22 @@ fn into_final_tokens<'src>(
                             newline_range,
                         } = newline_metadata;
 
-                        let additional_tokens = match indentation_change {
-                            Some(IndentationChange::Indent) => {
-                                vec![(Token::Indent, newline_range.end..source_location.end)]
-                            }
-                            Some(IndentationChange::Dedent(amount)) => (0..amount)
-                                .map(|_| (Token::Dedent, newline_range.end..source_location.end))
-                                .collect(),
-                            None => vec![],
-                        };
-
-                        return Ok(((Token::Newline, newline_range), additional_tokens));
+                        return Ok(match indentation_change {
+                            Some(IndentationChange::Indent) => (
+                                (Token::Indent, newline_range.end..source_location.end),
+                                vec![],
+                            ),
+                            Some(IndentationChange::Dedent(amount)) => (
+                                (Token::Dedent, newline_range.end..source_location.end),
+                                (1..amount)
+                                    .map(|_| {
+                                        (Token::Dedent, newline_range.end..source_location.end)
+                                    })
+                                    .chain(std::iter::once((Token::Newline, newline_range.clone())))
+                                    .collect(),
+                            ),
+                            None => ((Token::Newline, newline_range), vec![]),
+                        });
                     }
                     LexerToken::UnexpectedCharacter(c) => Token::UnexpectedCharacter(c),
                     LexerToken::StringLiteral(s) => Token::StringLiteral(s),

@@ -141,7 +141,7 @@ fn expr_parser<'src, I: Input<'src>>(
         let array_index = choice((
             expr.clone()
                 .or_not()
-                .then(just(Token::Colon).map(drop).spanned())
+                .then(just(Token::Colon).ignored().spanned())
                 .then(expr.clone().or_not())
                 .map(
                     |((start, colon), end): ((_, Spanned<()>), _)| ArrayIndex::Slice {
@@ -364,16 +364,15 @@ fn statement<'src, I: Input<'src>>(
     recursive(|statement| {
         let indented_block = indented(block(statement));
 
-        let assert_statement = expr
-            .clone()
-            .delimited_by(just([Token::Assert, Token::Colon]), just(Token::Newline))
+        let assert_statement = just([Token::Assert, Token::Colon])
+            .ignore_then(expr.clone())
             .map(|condition| Statement::from(AssertStatement { condition }));
 
-        let goto_statement = number_literal()
+        let goto_statement = just([Token::Goto, Token::Line])
+            .ignore_then(number_literal())
             .map(|line_number| line_number.parse().unwrap())
             .spanned()
-            .map(|line_number| Statement::from(GotoStatement { line_number }))
-            .delimited_by(just([Token::Goto, Token::Line]), just(Token::Newline));
+            .map(|line_number| Statement::from(GotoStatement { line_number }));
 
         let debug_statement = choice((
             one_of([Token::DebugLn, Token::Debug])
@@ -386,7 +385,6 @@ fn statement<'src, I: Input<'src>>(
                     .separated_by(just(Token::Comma))
                     .collect::<Vec<_>>(),
                 )
-                .then_ignore(just(Token::Newline))
                 .map(
                     |(token, args): (Spanned<Token>, Vec<Spanned<DebugArgument>>)| {
                         Statement::from(DebugStatement {
@@ -397,7 +395,6 @@ fn statement<'src, I: Input<'src>>(
                 ),
             just(Token::DebugStack)
                 .spanned()
-                .then_ignore(just(Token::Newline))
                 .map(|_| Statement::DebugStack),
         ));
 
@@ -424,7 +421,6 @@ fn statement<'src, I: Input<'src>>(
                 }),
         ))
         .then(expr.clone())
-        .then_ignore(just(Token::Newline))
         .map(|(lhs, expression)| Statement::from(AssignmentStatement { lhs, expression }));
 
         let swap_statement = choice((
@@ -450,38 +446,33 @@ fn statement<'src, I: Input<'src>>(
                 }),
         ))
         .then(choice((
-            ident()
-                .then_ignore(just(Token::Newline))
-                .spanned()
-                .map(AssignmentLhs::Variable),
-            expr.clone()
-                .then_ignore(just(Token::Newline))
-                .try_map(|expr, _span| match expr.inner {
-                    Expr::ArrayAccess {
-                        left,
-                        right:
-                            Spanned {
-                                inner: ArrayIndex::SingleIndex(right),
-                                ..
-                            },
-                    } => Ok(AssignmentLhs::ArrayAccess { left, right }),
-                    _ => Err(chumsky::error::Rich::custom(
-                        expr.span,
-                        "Left-hand side of assignment must be a variable or array access",
-                    )),
-                }),
+            ident().spanned().map(AssignmentLhs::Variable),
+            expr.clone().try_map(|expr, _span| match expr.inner {
+                Expr::ArrayAccess {
+                    left,
+                    right:
+                        Spanned {
+                            inner: ArrayIndex::SingleIndex(right),
+                            ..
+                        },
+                } => Ok(AssignmentLhs::ArrayAccess { left, right }),
+                _ => Err(chumsky::error::Rich::custom(
+                    expr.span,
+                    "Left-hand side of assignment must be a variable or array access",
+                )),
+            }),
         )))
         .map(|(lhs, rhs)| Statement::from(SwapStatement { lhs, rhs }));
 
         let if_statement = recursive(|if_statement| {
             expr.clone()
-                .delimited_by(just(Token::If), just([Token::Then, Token::Newline]))
+                .delimited_by(just(Token::If), just(Token::Then))
                 .then(indented_block.clone())
                 .then(
-                    just(Token::Else)
+                    just([Token::Newline, Token::Else])
                         .ignore_then(choice((
                             if_statement.clone().spanned().map(|stmt| Block(vec![stmt])),
-                            just(Token::Newline).ignore_then(indented_block.clone()),
+                            indented_block.clone(),
                         )))
                         .or_not(),
                 )
@@ -496,7 +487,7 @@ fn statement<'src, I: Input<'src>>(
 
         let while_statement = expr
             .clone()
-            .delimited_by(just(Token::While), just([Token::Do, Token::Newline]))
+            .delimited_by(just(Token::While), just(Token::Do))
             .then(indented_block.clone())
             .map(|(condition, body)| Statement::from(WhileStatement { condition, body }));
 
@@ -506,7 +497,7 @@ fn statement<'src, I: Input<'src>>(
             .then(expr.clone())
             .then_ignore(just(Token::To))
             .then(expr.clone())
-            .then_ignore(just([Token::Do, Token::Newline]))
+            .then_ignore(just(Token::Do))
             .then(indented_block.clone())
             .map(|(((loop_variable, start_expr), end_expr), body)| {
                 Statement::from(ForStatement {
@@ -517,10 +508,8 @@ fn statement<'src, I: Input<'src>>(
                 })
             });
 
-        let return_statement = expr
-            .clone()
-            .or_not()
-            .delimited_by(just(Token::Return), just(Token::Newline))
+        let return_statement = just(Token::Return)
+            .ignore_then(expr.clone().or_not())
             .map(|expr_opt| Statement::from(ReturnStatement { expr: expr_opt }));
 
         let common_statement = choice((
@@ -530,9 +519,7 @@ fn statement<'src, I: Input<'src>>(
             if_statement,
             assignment_statement,
             swap_statement,
-            expr.clone()
-                .then_ignore(just(Token::Newline))
-                .map(Statement::BareExpr),
+            expr.clone().map(Statement::BareExpr),
         ));
 
         let jumpy_statement = choice((common_statement.clone(), goto_statement));
@@ -551,7 +538,7 @@ fn block<'src, I: Input<'src>>(
 ) -> impl Parser<'src, I, Block<'src>> {
     statement
         .spanned()
-        .repeated()
+        .separated_by(just(Token::Newline))
         .collect::<Vec<_>>()
         .map(Block)
 }
@@ -562,8 +549,8 @@ pub fn parse_basic_program<'src, I: Input<'src>>(
     let expr = parse_base_expr();
     let block = block(statement(structural, expr));
     block
+        .then_ignore(just(Token::Newline).ignored().or(end()))
         .spanned()
-        .then_ignore(end())
         .map(|main_algorithm| AstRoot {
             procedures: vec![],
             main_algorithm,
@@ -585,7 +572,7 @@ pub fn parse_procedural_program<'src, I: Input<'src>>() -> impl Parser<'src, I, 
                 .map(|params| params.unwrap_or_default())
                 .spanned(),
         )
-        .then_ignore(just([Token::Colon, Token::Newline]))
+        .then_ignore(just(Token::Colon))
         .then(indented(block.clone()))
         .map(|((name, parameters), body)| ProcedureDefinition {
             name,
@@ -594,14 +581,15 @@ pub fn parse_procedural_program<'src, I: Input<'src>>() -> impl Parser<'src, I, 
         });
     procedure
         .spanned()
-        .repeated()
+        .separated_by(just(Token::Newline))
         .collect::<Vec<_>>()
+        .then_ignore(just(Token::Newline))
         .then(
-            just([Token::Algorithm, Token::Colon, Token::Newline])
+            just([Token::Algorithm, Token::Colon])
                 .ignore_then(indented(block))
                 .spanned(),
         )
-        .then_ignore(end())
+        .then_ignore(just(Token::Newline).ignored().or(end()))
         .map(|(procedures, statements)| AstRoot {
             procedures,
             main_algorithm: statements,
