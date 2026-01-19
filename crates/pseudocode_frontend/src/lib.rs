@@ -304,7 +304,7 @@ pub fn parse_source_to_ast<'src>(
     let ast = match result.into_result() {
         Ok(ast) => ast,
         Err(errors) => {
-            eprint_parse_errors(src, file_name.clone(), &errors);
+            write_parse_errors(src, file_name.clone(), &errors, w);
 
             return None;
         }
@@ -313,7 +313,7 @@ pub fn parse_source_to_ast<'src>(
     let type_errors = ast.validate_types();
 
     if !type_errors.is_empty() {
-        eprint_type_errors(src, file_name, &type_errors);
+        write_type_errors(src, file_name, &type_errors, w);
         return None;
     }
 

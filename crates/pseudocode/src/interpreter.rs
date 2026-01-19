@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Default, Debug)]
-pub struct Environment(HashMap<String, Value>);
+pub struct Environment(pub HashMap<String, Value>);
 
 #[derive(Debug)]
 pub enum RuntimeError {
