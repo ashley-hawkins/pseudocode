@@ -3,6 +3,7 @@ members = [
     "crates/pseudocode",
     "crates/pseudocode_cli",
     "crates/pseudocode_frontend",
+    "crates/pseudocode_js",
 ]
 package.license = "GPL-3.0-only"
 resolver = "3"

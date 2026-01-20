@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: light --default;
+}
+
+.cm-editor {
+  width: 0;
+  @apply flex flex-1;
+}
+
+.cm-gutters {
+  @apply rounded-l-md;
+  @apply pl-1;
+}
