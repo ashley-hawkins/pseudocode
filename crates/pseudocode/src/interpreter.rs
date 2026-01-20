@@ -393,7 +393,9 @@ impl InterpreterState {
             } => {
                 for source in arg_sources {
                     match source {
-                        crate::instruction::DebugArgSource::StringLiteral(s) => print!("{}", s),
+                        crate::instruction::DebugArgSource::StringLiteral(s) => {
+                            write!(print_dest, "{}", s).unwrap()
+                        }
                         crate::instruction::DebugArgSource::Stack => {
                             let value = self.pop_value();
                             write!(print_dest, "{}", value.inner).unwrap();
