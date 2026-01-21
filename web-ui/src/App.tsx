@@ -1,19 +1,20 @@
-import { createSignal, onMount } from 'solid-js'
+import { createEffect, createSignal, onMount } from 'solid-js'
 
 import { Mode, ProgramWrapper } from 'pseudocode_js'
 import pseudocodeInit from 'pseudocode_js'
 import { EditorView, basicSetup } from 'codemirror'
 import { gutter, GutterMarker } from '@codemirror/view'
-import { AnsiUp } from 'ansi_up';
 
 await pseudocodeInit();
 
-function App() {
-  const [count, setCount] = createSignal(0)
+function App(props: any) {
   const [parserOutput, setParserOutput] = createSignal<string>("")
 
+  createEffect(() => {
+    props.glEventHub.emit('parserOutput', parserOutput());
+  })
+
   let wrapper = new ProgramWrapper()
-  let ansiUp = new AnsiUp()
 
   let forceStop = false
 
@@ -55,9 +56,11 @@ function App() {
 
   let selectedMode: Mode = Mode.Structured
 
+  // throw "Uhhh i the next thing I need to work on is probably the initial environment input and then work on manual stepping and breakpoints";
+
   return (
     <>
-      <div class="flex flex-1 flex-row bg-neutral-400 gap-1 p-1">
+      <div class="h-full flex flex-1 flex-row bg-neutral-400 gap-1 p-1">
         <div class="flex flex-1 flex-col gap-1">
           <div class="flex flex-row">
             <select onChange={
@@ -105,13 +108,6 @@ function App() {
             <button class="btn flex-1" onClick={() => { forceStop = true }}>Stop</button>
           </div>
           <div ref={codeDiv} class="flex flex-1 bg-base-200 rounded-md border-base-300"></div>
-        </div>
-        <div id="right-panel" class="flex flex-1 bg-base-200 rounded-md">
-          <div class="flex flex-1 flex-col p-2">
-            <div class="flex-1 bg-black text-white font-mono text-sm p-3 rounded-md overflow-auto">
-              <pre innerHTML={ansiUp.ansi_to_html(parserOutput() || 'No parser output yet.')}></pre>
-            </div>
-          </div>
         </div>
       </div>
     </>

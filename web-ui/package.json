@@ -13,6 +13,8 @@
     "@tailwindcss/vite": "^4.1.18",
     "ansi_up": "^6.0.6",
     "codemirror": "^6.0.2",
+    "dockview-core": "^4.13.1",
+    "golden-layout": "^2.6.0",
     "pseudocode_js": "file:../crates/pseudocode_js/pkg",
     "solid-js": "^1.9.10",
     "tailwindcss": "^4.1.18"
