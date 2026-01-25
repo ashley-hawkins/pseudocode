@@ -4,14 +4,15 @@ import { Mode, ProgramWrapper } from 'pseudocode_js'
 import pseudocodeInit from 'pseudocode_js'
 import { EditorView, basicSetup } from 'codemirror'
 import { gutter, GutterMarker } from '@codemirror/view'
+import type { IGoldenLayoutProps } from './types'
 
 await pseudocodeInit();
 
-function App(props: any) {
+export default function ProgramEditor(props: IGoldenLayoutProps) {
   const [parserOutput, setParserOutput] = createSignal<string>("")
 
   createEffect(() => {
-    props.glEventHub.emit('parserOutput', parserOutput());
+    props.glContainer.layoutManager.eventHub.emit('parserOutput', parserOutput());
   })
 
   let wrapper = new ProgramWrapper()
@@ -55,8 +56,6 @@ function App(props: any) {
   })
 
   let selectedMode: Mode = Mode.Structured
-
-  // throw "Uhhh i the next thing I need to work on is probably the initial environment input and then work on manual stepping and breakpoints";
 
   return (
     <>
@@ -113,5 +112,3 @@ function App(props: any) {
     </>
   )
 }
-
-export default App
