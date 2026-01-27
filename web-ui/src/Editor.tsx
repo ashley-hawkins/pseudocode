@@ -10,12 +10,17 @@ await pseudocodeInit();
 
 export default function ProgramEditor(props: IGoldenLayoutProps) {
   const [parserOutput, setParserOutput] = createSignal<string>("")
+  let envVars: { key: string, value: string }[] = []
 
   createEffect(() => {
     props.glContainer.layoutManager.eventHub.emit('parserOutput', parserOutput());
   })
 
-  let wrapper = new ProgramWrapper()
+  const wrapper = new ProgramWrapper()
+
+  props.glContainer.layoutManager.eventHub.on('envVarsUpdate', (newEnvVars: { key: string, value: string }[]) => {
+    envVars = newEnvVars
+  })
 
   let forceStop = false
 
@@ -77,6 +82,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
               onClick={() => {
                 const src = editor?.state?.doc.toString() ?? ''
                 if (wrapper.load_source(src, selectedMode)) {
+                  wrapper.reset_state_with_environment(envVars.map((ev) => `${ev.key}:${ev.value}`))
 
                   async function run() {
                     let counter = 0

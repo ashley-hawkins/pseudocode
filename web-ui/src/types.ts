@@ -1,5 +1,6 @@
-import type { ComponentContainer } from "golden-layout";
+import type { ComponentContainer, JsonValue } from "golden-layout";
 
 export interface IGoldenLayoutProps {
-  glContainer: ComponentContainer
+  glContainer: ComponentContainer,
+  glState?: JsonValue
 }

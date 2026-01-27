@@ -8,15 +8,17 @@ import 'golden-layout/dist/css/goldenlayout-base.css';
 import 'golden-layout/dist/css/themes/goldenlayout-light-theme.css';
 import OutputPanel from './OutputPanel.tsx';
 import type { JSXElement } from 'solid-js';
+import { EnvironmentSelector } from './EnvironmentSelector.tsx';
+import type { IGoldenLayoutProps } from './types.ts';
 
 const root = document.getElementById('root')
 
 const layout = new GoldenLayout(root!)
 layout.resizeWithContainerAutomatically = true;
 
-const registerSolid = (TheComponent: ((arg0: any) => JSXElement)): GoldenLayout.ComponentFactoryFunction => {
+const registerSolid = (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)): GoldenLayout.ComponentFactoryFunction => {
     return (container, state) => {
-        const dispose = render(() => <TheComponent glContainer={container} />, container.element)
+        const dispose = render(() => <TheComponent glContainer={container} glState={state} />, container.element)
         container.on('destroy', () => {
             dispose()
         })
@@ -27,6 +29,7 @@ const registerSolid = (TheComponent: ((arg0: any) => JSXElement)): GoldenLayout.
 
 layout.registerComponentFactoryFunction('app', registerSolid(ProgramEditor));
 layout.registerComponentFactoryFunction('output-panel', registerSolid(OutputPanel));
+layout.registerComponentFactoryFunction('environment-selector', registerSolid(EnvironmentSelector));
 
 layout.loadLayout({
     root: {
@@ -39,6 +42,10 @@ layout.loadLayout({
             type: 'component',
             componentType: 'output-panel',
             title: 'Output Panel',
+        }, {
+            type: 'component',
+            componentType: 'environment-selector',
+            title: 'Environment Selector',
         }]
     },
 });
