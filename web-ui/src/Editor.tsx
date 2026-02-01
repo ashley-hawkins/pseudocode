@@ -4,7 +4,7 @@ import { Mode, ProgramWrapper } from 'pseudocode_js'
 import pseudocodeInit from 'pseudocode_js'
 import { EditorView, basicSetup } from 'codemirror'
 import { gutter, GutterMarker } from '@codemirror/view'
-import type { IGoldenLayoutProps } from './types'
+import { emitUserBroadcast, onUserBroadcast, UserBroadcastType, type IGoldenLayoutProps, type UserBroadcastData } from './types'
 
 await pseudocodeInit();
 
@@ -13,13 +13,15 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
   let envVars: { key: string, value: string }[] = []
 
   createEffect(() => {
-    props.glContainer.layoutManager.eventHub.emit('parserOutput', parserOutput());
+    emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.parserOutput, output: parserOutput() });
   })
 
   const wrapper = new ProgramWrapper()
 
-  props.glContainer.layoutManager.eventHub.on('envVarsUpdate', (newEnvVars: { key: string, value: string }[]) => {
-    envVars = newEnvVars
+  onUserBroadcast(props.glContainer.layoutManager.eventHub, (broadcastData: UserBroadcastData) => {
+    if (broadcastData.type === UserBroadcastType.envVarsUpdate) {
+      envVars = broadcastData.envVars
+    }
   })
 
   let forceStop = false

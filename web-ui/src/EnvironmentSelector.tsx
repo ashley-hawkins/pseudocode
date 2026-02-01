@@ -1,12 +1,12 @@
 import { createEffect, createSignal } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
-import type { IGoldenLayoutProps } from "./types";
+import { UserBroadcastType, type IGoldenLayoutProps } from "./types";
 
 export function EnvironmentSelector(props: IGoldenLayoutProps) {
     let [envVars, setEnvVars] = createStore<{ key: string, value: string }[]>([]);
 
     createEffect(() => {
-        props.glContainer.layoutManager.eventHub.emit('envVarsUpdate', unwrap(envVars));
+        props.glContainer.layoutManager.eventHub.emitUserBroadcast({ type: UserBroadcastType.envVarsUpdate, envVars: unwrap(envVars) });
     });
 
     return (

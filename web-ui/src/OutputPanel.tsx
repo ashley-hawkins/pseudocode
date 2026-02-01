@@ -1,14 +1,16 @@
 import { AnsiUp } from "ansi_up"
 import { createSignal } from "solid-js"
-import type { IGoldenLayoutProps } from "./types"
+import { onUserBroadcast, UserBroadcastType, type IGoldenLayoutProps, type UserBroadcastData } from "./types"
 
 export default function OutputPanel(props: IGoldenLayoutProps) {
     let ansiUp = new AnsiUp()
 
     const [parserOutput, setParserOutput] = createSignal<string>("")
 
-    props.glContainer.layoutManager.eventHub.on('parserOutput', (output: string) => {
-        setParserOutput(output)
+    onUserBroadcast(props.glContainer.layoutManager.eventHub, (broadcastData: UserBroadcastData) => {
+        if (broadcastData.type === UserBroadcastType.parserOutput) {
+            setParserOutput(broadcastData.output)
+        }
     })
 
     return (
