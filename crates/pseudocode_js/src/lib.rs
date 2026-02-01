@@ -3,7 +3,7 @@ use std::io::Write;
 use js_sys::Map;
 use pseudocode::{
     instruction::generate_instructions_for_ast,
-    interpreter::{InterpreterState, Program},
+    interpreter::{InterpreterState, OwnedProgram},
 };
 use pseudocode_frontend::write_runtime_error;
 use wasm_bindgen::prelude::*;
@@ -42,7 +42,7 @@ impl ValueWrapper {
 #[derive(Default)]
 pub struct ProgramWrapper {
     source_code: String,
-    program: <Program as ToOwned>::Owned,
+    program: OwnedProgram,
     output: std::io::Cursor<Vec<u8>>,
     state: InterpreterState,
 }

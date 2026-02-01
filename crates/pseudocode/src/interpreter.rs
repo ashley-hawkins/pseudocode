@@ -27,6 +27,7 @@ pub struct Frame {
 }
 
 pub type Program = [Spanned<Instruction>];
+pub type OwnedProgram = Vec<Spanned<Instruction>>;
 
 pub struct InterpreterState {
     pub instruction_offset: usize,
