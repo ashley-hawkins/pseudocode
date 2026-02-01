@@ -2,7 +2,7 @@
 import { render } from 'solid-js/web'
 import './index.css'
 import ProgramEditor from './Editor.tsx'
-import { GoldenLayout } from 'golden-layout'
+import { GoldenLayout, LayoutConfig } from 'golden-layout'
 
 import 'golden-layout/dist/css/goldenlayout-base.css';
 import 'golden-layout/dist/css/themes/goldenlayout-light-theme.css';
@@ -11,12 +11,8 @@ import type { JSXElement } from 'solid-js';
 import { EnvironmentSelector } from './EnvironmentSelector.tsx';
 import type { IGoldenLayoutProps } from './types.ts';
 
-const root = document.getElementById('root')
-
-const layout = new GoldenLayout(root!)
-layout.resizeWithContainerAutomatically = true;
-
-const registerSolid = (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)): GoldenLayout.ComponentFactoryFunction => {
+const solidFactory = (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)): GoldenLayout.ComponentFactoryFunction => {
+    console.log("Creating Solid Component:", TheComponent.name);
     return (container, state) => {
         const dispose = render(() => <TheComponent glContainer={container} glState={state} />, container.element)
         container.on('destroy', () => {
@@ -27,25 +23,47 @@ const registerSolid = (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)
     }
 }
 
-layout.registerComponentFactoryFunction('app', registerSolid(ProgramEditor));
-layout.registerComponentFactoryFunction('output-panel', registerSolid(OutputPanel));
-layout.registerComponentFactoryFunction('environment-selector', registerSolid(EnvironmentSelector));
+declare module 'golden-layout' {
+    interface GoldenLayout {
+        registerSolidComponent: (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)) => void;
+    }
+}
 
-layout.loadLayout({
-    root: {
-        type: 'row',
-        content: [{
-            type: 'component',
-            componentType: 'app',
-            title: 'Code Editor',
-        }, {
-            type: 'component',
-            componentType: 'output-panel',
-            title: 'Output Panel',
-        }, {
-            type: 'component',
-            componentType: 'environment-selector',
-            title: 'Environment Selector',
-        }]
-    },
-});
+GoldenLayout.prototype.registerSolidComponent = function (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)) {
+    this.registerComponentFactoryFunction(TheComponent.name, solidFactory(TheComponent))
+}
+
+let container: HTMLElement | undefined;
+let layoutConfig: LayoutConfig = { root: undefined }
+
+if (!new URL(window.location.href).searchParams.has("gl-window")) {
+    container = document.getElementById('root')!
+
+    layoutConfig = {
+        root: {
+            type: 'row',
+            content: [{
+                type: 'component',
+                componentType: ProgramEditor.name,
+                title: 'Code Editor',
+            }, {
+                type: 'component',
+                componentType: OutputPanel.name,
+                title: 'Output Panel',
+            }, {
+                type: 'component',
+                componentType: EnvironmentSelector.name,
+                title: 'Environment Selector',
+            }]
+        },
+    }
+}
+
+const layout = new GoldenLayout(container)
+layout.resizeWithContainerAutomatically = true;
+
+layout.registerSolidComponent(ProgramEditor)
+layout.registerSolidComponent(OutputPanel)
+layout.registerSolidComponent(EnvironmentSelector)
+
+layout.loadLayout(layoutConfig);
