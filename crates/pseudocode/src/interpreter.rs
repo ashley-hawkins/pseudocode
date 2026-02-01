@@ -30,6 +30,7 @@ pub type Program = [Spanned<Instruction>];
 pub type OwnedProgram = Vec<Spanned<Instruction>>;
 
 pub struct InterpreterState {
+    pub last_instruction_offset: Option<usize>,
     pub instruction_offset: usize,
     pub frame_stack: Vec<Frame>,
     pub expr_stack: Vec<Spanned<Value>>,
@@ -185,6 +186,7 @@ impl InterpreterState {
 
     pub fn new_with_environment(env: Environment) -> Self {
         Self {
+            last_instruction_offset: None,
             instruction_offset: 0,
             frame_stack: vec![Frame {
                 environment: env,
@@ -438,18 +440,19 @@ impl InterpreterState {
 
         match control_flow {
             ControlFlow::Continue => {
-                self.instruction_offset += 1;
+                self.set_instruction_offset(self.instruction_offset + 1);
             }
             ControlFlow::Jump(target) => {
-                self.instruction_offset = target;
+                self.set_instruction_offset(target);
             }
             ControlFlow::Return => {
                 let frame = self.pop_frame();
                 match frame.return_address {
                     Some(return_address) => {
-                        self.instruction_offset = return_address;
+                        self.set_instruction_offset(return_address);
                     }
                     None => {
+                        self.set_instruction_offset(usize::MAX);
                         return Ok(StepResult::Halted(frame.environment));
                     }
                 }
@@ -457,6 +460,11 @@ impl InterpreterState {
         }
 
         Ok(StepResult::Continued)
+    }
+
+    pub fn set_instruction_offset(&mut self, offset: usize) {
+        self.last_instruction_offset = Some(self.instruction_offset);
+        self.instruction_offset = offset;
     }
 
     pub fn step(&mut self, program: &Program) -> Result<StepResult, RuntimeError> {
