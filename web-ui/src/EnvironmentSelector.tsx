@@ -16,7 +16,7 @@ export function EnvironmentSelector(props: IGoldenLayoutProps) {
                     <input
                         type="text"
                         placeholder="Name"
-                        class="input"
+                        class="input flex-1"
                         value={envVar.key}
                         onInput={(e) => {
                             const newKey = (e.target as HTMLInputElement).value;
@@ -26,7 +26,7 @@ export function EnvironmentSelector(props: IGoldenLayoutProps) {
                     <input
                         type="text"
                         placeholder="Value"
-                        class="input"
+                        class="input flex-1"
                         value={envVar.value}
                         onInput={(e) => {
                             const newValue = (e.target as HTMLInputElement).value;
