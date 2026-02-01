@@ -436,6 +436,11 @@ impl InterpreterState {
         program: &Program,
         print_dest: &mut impl std::io::Write,
     ) -> Result<StepResult, RuntimeError> {
+        if self.instruction_offset >= program.len() {
+            todo!("decide whether this should be an error");
+            return Ok(StepResult::Halted(Environment::default()));
+        }
+
         let control_flow = self.run_instruction(program, print_dest)?;
 
         match control_flow {
