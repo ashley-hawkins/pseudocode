@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use js_sys::Map;
 use pseudocode::{
     instruction::generate_instructions_for_ast,
@@ -170,6 +168,45 @@ impl ProgramWrapper {
             frames.push(self.frame_at(i).unwrap());
         }
         frames
+    }
+
+    pub fn query_source_lines(&self) -> LineQueryResult {
+        let last_line = self
+            .state
+            .last_instruction_offset
+            .map(|offset| self.program[offset].span.start.line);
+        let next_line = self
+            .program
+            .get(self.state.instruction_offset)
+            .map(|instr| instr.span.start.line);
+
+        LineQueryResult {
+            last_line,
+            next_line,
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub struct LineQueryResult {
+    pub last_line: Option<usize>,
+    pub next_line: Option<usize>,
+}
+
+#[wasm_bindgen]
+impl LineQueryResult {
+    /// Returns true if the program is transitioning to the target line
+    /// in the next step.
+    #[wasm_bindgen]
+    pub fn at_line_boundary(&self, target_line: Option<usize>) -> bool {
+        match (self.last_line, self.next_line, target_line) {
+            // Transitioning to the target line
+            (last, Some(next), Some(target)) => last != Some(next) && next == target,
+            // Transitioning to any different line (when there's no target)
+            (last, Some(next), None) => last != Some(next),
+            // If next is None then we're halted, so no line transitions
+            _ => false,
+        }
     }
 }
 
