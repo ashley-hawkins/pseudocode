@@ -141,7 +141,17 @@ impl ProgramWrapper {
 
     #[wasm_bindgen]
     pub fn current_environment(&self) -> Map {
-        let env = &self.state.frame_stack.last().unwrap().environment.0;
+        self.frame_at(0).unwrap()
+    }
+
+    #[wasm_bindgen]
+    pub fn frame_at(&self, index: usize) -> Option<Map> {
+        let frame = self
+            .state
+            .frame_stack
+            .get(self.state.frame_stack.len() - 1 - index)?;
+
+        let env = &frame.environment.0;
 
         let obj = js_sys::Map::new();
 
@@ -150,7 +160,16 @@ impl ProgramWrapper {
             obj.set(&JsValue::from_str(key), &wrapped.into());
         }
 
-        obj
+        Some(obj)
+    }
+
+    #[wasm_bindgen]
+    pub fn current_frames(&self) -> Vec<Map> {
+        let mut frames = Vec::new();
+        for i in 0..self.state.frame_stack.len() {
+            frames.push(self.frame_at(i).unwrap());
+        }
+        frames
     }
 }
 
