@@ -8,6 +8,69 @@ import { emitUserBroadcast, onUserBroadcast, UserBroadcastType, type IGoldenLayo
 
 await pseudocodeInit();
 
+import { StateField, StateEffect, RangeSet, EditorState, Transaction, Range } from "@codemirror/state"
+import type { JsonValue } from 'golden-layout'
+
+const breakpointMarker = new class extends GutterMarker {
+  toDOM() { return document.createTextNode("●") }
+}
+
+const breakpointEffect = StateEffect.define<{ pos: number, on: boolean }>({
+  map: (val, mapping) => ({ pos: mapping.mapPos(val.pos), on: val.on })
+})
+
+const breakpointState = StateField.define<RangeSet<GutterMarker>>({
+  create() { return RangeSet.empty },
+  update(set, transaction) {
+    set = set.map(transaction.changes)
+    for (let e of transaction.effects) {
+      if (e.is(breakpointEffect)) {
+        if (e.value.on)
+          set = set.update({ add: [breakpointMarker.range(e.value.pos)] })
+        else
+          set = set.update({ filter: from => from != e.value.pos })
+      }
+    }
+    return set
+  }
+})
+
+function toggleBreakpoint(view: EditorView, pos: number) {
+  let breakpoints = view.state.field(breakpointState)
+  let hasBreakpoint = false
+  breakpoints.between(pos, pos, () => { hasBreakpoint = true })
+  view.dispatch({
+    effects: breakpointEffect.of({ pos, on: !hasBreakpoint })
+  })
+}
+
+const breakpointGutter = [
+  breakpointState,
+  gutter({
+    class: "cm-breakpoint-gutter",
+    markers: v => v.state.field(breakpointState),
+    initialSpacer: () => breakpointMarker,
+    domEventHandlers: {
+      mousedown(view, line) {
+        toggleBreakpoint(view, line.from)
+        return true
+      }
+    }
+  }),
+  EditorView.baseTheme({
+    ".cm-breakpoint-gutter .cm-gutterElement": {
+      color: "red",
+      paddingLeft: "5px",
+      cursor: "default"
+    }
+  })
+]
+
+export interface ProgramEditorState {
+  baseState: JsonValue;
+  breakpoints: number[];
+}
+
 export default function ProgramEditor(props: IGoldenLayoutProps) {
   const [parserOutput, setParserOutput] = createSignal<string>("")
   let envVars: { key: string, value: string }[] = []
@@ -29,28 +92,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
   let editor: EditorView
   let codeDiv
 
-  onMount(() => {
-    class BreakpointMarker extends GutterMarker {
-      activated: boolean = false
-      toDOM() {
-        return document.createTextNode(this.activated ? '●' : '🡆')
-      }
-    }
 
-    const breakpointGutter = gutter({
-      class: 'cm-gutter cm-breakpoints',
-      renderEmptyElements: true,
-      domEventHandlers: {
-        click: (view, line, event) => {
-          const lineNumber = view.state.doc.lineAt(line.from).number
-          console.log('Gutter clicked on line', lineNumber)
-          return true
-        }
-      },
-      lineMarker: (line) => {
-        return new BreakpointMarker()
-      }
-    })
 
     editor = new EditorView({
       parent: codeDiv!,
@@ -140,6 +182,16 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     stepProgram({ type: StepType.LineBasedBreakpoint, breakpoints })
   }
 
+  let continueProgramToNextBreakpoint = () => {
+    forceStop = false
+    let breakpoints = new Set<number>()
+    editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, to) => {
+      const line = editor.state.doc.lineAt(from)
+      breakpoints.add(line.number - 1)
+    })
+    continueWithBreakpointSet(breakpoints)
+  }
+
   let continueProgramToCompletion = () => {
     continueWithBreakpointSet(new Set)
   }
@@ -152,7 +204,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     const src = editor?.state?.doc.toString() ?? ''
     if (wrapper.load_source(src, selectedMode)) {
       wrapper.reset_state_with_environment(envVars.map((ev) => `${ev.key}:${ev.value}`))
-      continueProgramToCompletion()
+      continueProgramToNextBreakpoint()
     } else {
       setParserOutput(wrapper.output() || 'No parser output.')
     }
