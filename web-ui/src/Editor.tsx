@@ -11,6 +11,88 @@ await pseudocodeInit();
 import { StateField, StateEffect, RangeSet, EditorState, Transaction, Range } from "@codemirror/state"
 import type { JsonValue } from 'golden-layout'
 
+const nextExecutionMarker = new class extends GutterMarker {
+  elementClass: string = "cm-next-execution-marker"
+  toDOM() { return document.createTextNode("▶") }
+}
+const lastExecutionMarker = new class extends GutterMarker {
+  elementClass: string = "cm-last-execution-marker"
+  toDOM() { return document.createTextNode("►") }
+}
+
+const executionEffect = StateEffect.define<{ lastLinePos?: number; nextLinePos?: number }>({
+  map: (val, mapping) => ({
+    lastLinePos: val.lastLinePos ? mapping.mapPos(val.lastLinePos) : undefined,
+    nextLinePos: val.nextLinePos ? mapping.mapPos(val.nextLinePos) : undefined,
+  })
+})
+
+const executionState = StateField.define<{
+  lastLinePos?: number;
+  nextLinePos?: number;
+}>({
+  create: function (state: EditorState): { lastLinePos?: number; nextLinePos?: number } {
+    return {}
+  },
+  update: function (value: { lastLinePos?: number; nextLinePos?: number }, transaction: Transaction): { lastLinePos?: number; nextLinePos?: number } {
+    const mapped = {
+      lastLinePos: value.lastLinePos !== undefined ? transaction.changes.mapPos(value.lastLinePos) : undefined,
+      nextLinePos: value.nextLinePos !== undefined ? transaction.changes.mapPos(value.nextLinePos) : undefined,
+    }
+
+    for (let e of transaction.effects) {
+      if (e.is(executionEffect)) {
+        return {
+          lastLinePos: e.value.lastLinePos,
+          nextLinePos: e.value.nextLinePos,
+        }
+      }
+    }
+
+    return mapped
+  }
+})
+
+function setExecutionState(view: EditorView, lastLine?: number, nextLine?: number) {
+  view.dispatch({
+    effects: executionEffect.of({
+      lastLinePos: lastLine !== undefined ? view.state.doc.line(lastLine + 1).from : undefined,
+      nextLinePos: nextLine !== undefined ? view.state.doc.line(nextLine + 1).from : undefined
+    })
+  })
+}
+
+const executionStateGutter = [
+  executionState,
+  gutter({
+    class: "cm-execution-gutter",
+    markers: (view) => {
+      const execState = view.state.field(executionState)
+      const markers: Range<GutterMarker>[] = []
+      if (execState.lastLinePos !== undefined) {
+        markers.push(lastExecutionMarker.range(execState.lastLinePos))
+      }
+      if (execState.nextLinePos !== undefined) {
+        markers.push(nextExecutionMarker.range(execState.nextLinePos))
+      }
+      return RangeSet.empty.update({ add: markers })
+    },
+    initialSpacer: () => nextExecutionMarker,
+  }),
+  EditorView.baseTheme({
+    ".cm-execution-gutter .cm-gutterElement": {
+      paddingLeft: "5px",
+      cursor: "default"
+    },
+    ".cm-next-execution-marker": {
+      color: "orange",
+    },
+    ".cm-last-execution-marker": {
+      color: "green",
+    }
+  })
+]
+
 const breakpointMarker = new class extends GutterMarker {
   toDOM() { return document.createTextNode("●") }
 }
@@ -106,6 +188,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
       doc: newState?.doc,
       selection: newState?.selection,
       extensions: [
+        executionStateGutter,
         breakpointGutter,
         basicSetup,
       ],
@@ -179,6 +262,12 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
 
     const updateVisuals = () => {
       setParserOutput(wrapper.output() || 'No runtime output.')
+      const lineQueryResult = wrapper.query_source_lines()
+      setExecutionState(
+        editor,
+        lineQueryResult.last_line,
+        lineQueryResult.next_line
+      )
     }
 
     let counter = 0
