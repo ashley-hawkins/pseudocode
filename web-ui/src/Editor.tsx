@@ -64,6 +64,100 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
 
   let selectedMode: Mode = Mode.Structured
 
+  const enum StepType {
+    LineBasedBreakpoint,
+    NextLine,
+    ToCompletion
+  }
+
+  interface StepBreakpointOptions {
+    type: StepType.LineBasedBreakpoint,
+    breakpoints: Set<number>
+  }
+
+  interface StepNextLineOptions {
+    type: StepType.NextLine
+  }
+
+  type StepOptions = StepBreakpointOptions | StepNextLineOptions
+
+  let stepProgram = async (stepOptions: StepOptions) => {
+    let shouldStop = () => {
+      const lineQueryResult = wrapper.query_source_lines()
+
+      const last = lineQueryResult.last_line
+      const next = lineQueryResult.next_line
+
+      // Program has halted
+      if (next === undefined) {
+        return true
+      }
+
+      // This is not a transition between lines
+      if (next === last) {
+        return false
+      }
+
+      if (stepOptions.type === StepType.LineBasedBreakpoint) {
+        // About to hit a breakpoint
+        return stepOptions.breakpoints.has(next)
+      } else if (stepOptions.type === StepType.NextLine) {
+        // About to transition to the next line
+        return true
+      }
+    }
+
+    const updateVisuals = () => {
+      setParserOutput(wrapper.output() || 'No runtime output.')
+    }
+
+    let counter = 0
+
+    while (true) {
+      if (shouldStop()) {
+        break
+      }
+      if (forceStop) {
+        forceStop = false
+        break
+      }
+
+      wrapper.step()
+
+      if (counter > 1000) {
+        updateVisuals()
+        counter = 0
+      }
+      // Yield every 1000 steps to make sure the UI isn't blocked.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      counter += 1
+    }
+
+    updateVisuals()
+  }
+
+  let continueWithBreakpointSet = (breakpoints: Set<number>) => {
+    stepProgram({ type: StepType.LineBasedBreakpoint, breakpoints })
+  }
+
+  let continueProgramToCompletion = () => {
+    continueWithBreakpointSet(new Set)
+  }
+
+  let stepLine = () => {
+    stepProgram({ type: StepType.NextLine })
+  }
+
+  let runProgram = () => {
+    const src = editor?.state?.doc.toString() ?? ''
+    if (wrapper.load_source(src, selectedMode)) {
+      wrapper.reset_state_with_environment(envVars.map((ev) => `${ev.key}:${ev.value}`))
+      continueProgramToCompletion()
+    } else {
+      setParserOutput(wrapper.output() || 'No parser output.')
+    }
+  }
+
   return (
     <>
       <div class="h-full flex flex-1 flex-row bg-neutral-400 gap-1 p-1">
@@ -81,37 +175,11 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
             </select>
             <button
               class="btn flex-1"
-              onClick={() => {
-                const src = editor?.state?.doc.toString() ?? ''
-                if (wrapper.load_source(src, selectedMode)) {
-                  wrapper.reset_state_with_environment(envVars.map((ev) => `${ev.key}:${ev.value}`))
-
-                  async function run() {
-                    let counter = 0
-                    while (wrapper.step()) {
-                      setParserOutput(wrapper.output() || 'No runtime output.')
-                      if (counter > 1000) {
-                        counter = 0
-                        await new Promise((resolve) => setTimeout(resolve, 0))
-                      }
-                      counter += 1
-                      if (forceStop) {
-                        forceStop = false
-                        break
-                      }
-                    }
-
-                    setParserOutput(wrapper.output() || 'No runtime output.')
-                  }
-                  run()
-                } else {
-                  setParserOutput(wrapper.output() || 'No parser output.')
-                }
-              }}
+              onClick={runProgram}
             >
               Run
             </button>
-            <button class="btn flex-1">Step</button>
+            <button class="btn flex-1" onClick={stepLine}>Step</button>
             <button class="btn flex-1" onClick={() => { forceStop = true }}>Stop</button>
           </div>
           <div ref={codeDiv} class="flex flex-1 bg-base-200 rounded-md border-base-300"></div>
