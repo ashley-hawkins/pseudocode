@@ -92,16 +92,44 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
   let editor: EditorView
   let codeDiv
 
+  let newState = undefined;
 
+  const state = (props.glContainer.state as ProgramEditorState | undefined);
 
+  if (state !== undefined && state.baseState) {
+    newState = EditorState.fromJSON(state.baseState);
+  }
+
+  onMount(() => {
     editor = new EditorView({
       parent: codeDiv!,
-      doc: `// Write your pseudocode here\nDEBUGLN "Hello world!"\n`,
+      doc: newState?.doc,
+      selection: newState?.selection,
       extensions: [
         breakpointGutter,
         basicSetup,
       ],
     })
+
+    for (let bp of state?.breakpoints || []) {
+      const line = editor.state.doc.line(bp + 1)
+      toggleBreakpoint(editor, line.from)
+    }
+
+    props.glContainer.stateRequestEvent = () => {
+      const serializedState = {
+        baseState: editor.state.toJSON(),
+        breakpoints: (() => {
+          let bps: Set<number> = new Set()
+          editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, to) => {
+            const line = editor.state.doc.lineAt(from)
+            bps.add(line.number - 1)
+          })
+          return Array.from(bps)
+        })()
+      }
+      return serializedState;
+    }
   })
 
   let selectedMode: Mode = Mode.Structured
