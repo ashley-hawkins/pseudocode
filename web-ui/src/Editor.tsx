@@ -1,6 +1,6 @@
 import { createEffect, createSignal, onMount } from 'solid-js'
 
-import { Mode, ProgramWrapper } from 'pseudocode_js'
+import { LineQueryResult, Mode, ProgramWrapper } from 'pseudocode_js'
 import pseudocodeInit from 'pseudocode_js'
 import { EditorView, basicSetup } from 'codemirror'
 import { gutter, GutterMarker } from '@codemirror/view'
@@ -75,7 +75,7 @@ const executionStateGutter = [
       if (execState.nextLinePos !== undefined) {
         markers.push(nextExecutionMarker.range(execState.nextLinePos))
       }
-      return RangeSet.empty.update({ add: markers })
+      return RangeSet.empty.update({ add: markers.sort((a, b) => a.from - b.from) })
     },
     initialSpacer: () => nextExecutionMarker,
   }),
@@ -234,20 +234,23 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
 
   type StepOptions = StepBreakpointOptions | StepNextLineOptions
 
+  const [currentlyRunning, setCurrentlyRunning] = createSignal<boolean>(false);
+
   let stepProgram = async (stepOptions: StepOptions) => {
-    let shouldStop = () => {
-      const lineQueryResult = wrapper.query_source_lines()
+    if (currentlyRunning()) {
+      return
+    }
+    setCurrentlyRunning(true);
+    let finishedStepping = (queryResult: LineQueryResult): boolean => {
+      const next = queryResult.next_line
 
-      const last = lineQueryResult.last_line
-      const next = lineQueryResult.next_line
-
-      // Program has halted
       if (next === undefined) {
+        // Program has halted
         return true
       }
 
       // This is not a transition between lines
-      if (next === last) {
+      if (!queryResult.at_line_boundary()) {
         return false
       }
 
@@ -257,42 +260,54 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
       } else if (stepOptions.type === StepType.NextLine) {
         // About to transition to the next line
         return true
+      } else {
+        throw new Error("Invalid step option type")
       }
     }
 
     const updateVisuals = () => {
       setParserOutput(wrapper.output() || 'No runtime output.')
-      const lineQueryResult = wrapper.query_source_lines()
       setExecutionState(
         editor,
-        lineQueryResult.last_line,
-        lineQueryResult.next_line
+        previousLine,
+        nextLine
       )
     }
 
     let counter = 0
 
-    while (true) {
-      if (shouldStop()) {
-        break
-      }
-      if (forceStop) {
-        forceStop = false
-        break
-      }
+    const initialQueryResult = wrapper.query_source_lines()
+    let nextLine = initialQueryResult.next_line
+    let previousLine = initialQueryResult.last_line;
+    if (initialQueryResult.next_line !== undefined) {
+      while (true) {
+        wrapper.step()
 
-      wrapper.step()
+        if (forceStop) {
+          forceStop = false
+          break
+        }
 
-      if (counter > 1000) {
+        const queryResult = wrapper.query_source_lines()
+        if (queryResult.at_line_boundary()) {
+          previousLine = nextLine;
+          nextLine = queryResult.next_line;
+        }
+        if (finishedStepping(queryResult)) {
+          break
+        }
+
+        // Yield every 10000 steps to make sure the UI isn't blocked.
+        await new Promise((resolve) => setTimeout(resolve, 0))
         updateVisuals()
-        counter = 0
+        if (counter > 10000) {
+          counter = 0
+        }
+        counter += 1
       }
-      // Yield every 1000 steps to make sure the UI isn't blocked.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      counter += 1
     }
-
     updateVisuals()
+    setCurrentlyRunning(false);
   }
 
   let continueWithBreakpointSet = (breakpoints: Set<number>) => {
@@ -342,14 +357,15 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
               <option selected value={Mode.Structured}>Structured Imp</option>
               <option value={Mode.Procedural}>Procedural/Recursive Imp</option>
             </select>
-            <button
-              class="btn flex-1"
-              onClick={runProgram}
-            >
-              Run
-            </button>
+            {
+              currentlyRunning() ? (
+                <button class="btn flex-1" onClick={() => { forceStop = true }}>Stop</button>
+              ) : (
+                <button class="btn flex-1" onClick={runProgram}>Run</button>
+              )
+            }
+            <button class="btn flex-1" onClick={continueProgramToNextBreakpoint}>Continue</button>
             <button class="btn flex-1" onClick={stepLine}>Step</button>
-            <button class="btn flex-1" onClick={() => { forceStop = true }}>Stop</button>
           </div>
           <div ref={codeDiv} class="flex flex-1 bg-base-200 rounded-md border-base-300"></div>
         </div>
