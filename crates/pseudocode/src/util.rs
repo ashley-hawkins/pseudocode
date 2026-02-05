@@ -101,7 +101,7 @@ impl std::fmt::Debug for SourceSpan {
             self.start.line + 1,
             self.start.column + 1,
             self.end.line + 1,
-            self.end.column + 1
+            self.end.column + 1,
         )
     }
 }
@@ -109,7 +109,7 @@ impl std::fmt::Debug for SourceSpan {
 impl SourceSpan {
     pub fn new(start: SourceLocation, end: SourceLocation) -> Self {
         SourceSpan {
-            context: SourceContext::None,
+            context: Default::default(),
             start,
             end,
         }
@@ -117,7 +117,7 @@ impl SourceSpan {
 
     pub fn new_from_range(range: Range<usize>, line_offsets: &[usize]) -> Self {
         SourceSpan {
-            context: SourceContext::None,
+            context: Default::default(),
             start: offset_to_source_location(range.start, line_offsets),
             end: offset_to_source_location(range.end, line_offsets),
         }
@@ -129,7 +129,7 @@ impl SourceSpan {
 
     pub fn eof() -> Self {
         SourceSpan {
-            context: SourceContext::None,
+            context: Default::default(),
             start: SourceLocation::eof(),
             end: SourceLocation::eof(),
         }
@@ -168,7 +168,7 @@ pub fn source_byte_range_to_source_span(
     line_offsets: &[usize],
 ) -> SourceSpan {
     SourceSpan {
-        context: SourceContext::None,
+        context: Default::default(),
         start: offset_to_source_location(token_range.start, line_offsets),
         end: offset_to_source_location(token_range.end, line_offsets),
     }

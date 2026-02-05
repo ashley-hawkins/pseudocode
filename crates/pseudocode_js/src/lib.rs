@@ -1,7 +1,7 @@
 use js_sys::Map;
 use pseudocode::{
     instruction::generate_instructions_for_ast,
-    interpreter::{InterpreterState, OwnedProgram},
+    interpreter::{InterpreterState, OwnedProgram, Program},
 };
 use pseudocode_frontend::write_runtime_error;
 use wasm_bindgen::prelude::*;
@@ -170,27 +170,40 @@ impl ProgramWrapper {
         frames
     }
 
-    pub fn query_source_lines(&self) -> LineQueryResult {
+    pub fn query_source_lines(&mut self) -> LineQueryResult {
         let last_line = self
             .state
             .last_instruction_offset
-            .map(|offset| self.program[offset].span.start.line);
+            .map(|offset| self.program[offset].instruction.span.start.line);
         let next_line = self
             .program
             .get(self.state.instruction_offset)
-            .map(|instr| instr.span.start.line);
+            .map(|annotated_instr| annotated_instr.instruction.span.start.line);
+
+        let next_line_is_start_of_line =
+            is_start_of_line(&self.program, self.state.instruction_offset);
 
         LineQueryResult {
             last_line,
             next_line,
+            next_line_is_start_of_line,
         }
     }
+}
+
+fn is_start_of_line(program: &Program, instruction_index: usize) -> bool {
+    instruction_index < program.len()
+        && (instruction_index == 0
+            || (!program[instruction_index].annotation.exempt_from_break
+                && program[instruction_index - 1].instruction.span.start.line
+                    != program[instruction_index].instruction.span.start.line))
 }
 
 #[wasm_bindgen]
 pub struct LineQueryResult {
     pub last_line: Option<usize>,
     pub next_line: Option<usize>,
+    pub next_line_is_start_of_line: bool,
 }
 
 #[wasm_bindgen]
@@ -198,15 +211,14 @@ impl LineQueryResult {
     /// Returns true if the program is transitioning to the target line
     /// in the next step.
     #[wasm_bindgen]
-    pub fn at_line_boundary(&self, target_line: Option<usize>) -> bool {
-        match (self.last_line, self.next_line, target_line) {
-            // Transitioning to the target line
-            (last, Some(next), Some(target)) => last != Some(next) && next == target,
-            // Transitioning to any different line (when there's no target)
-            (last, Some(next), None) => last != Some(next),
-            // If next is None then we're halted, so no line transitions
-            _ => false,
-        }
+    pub fn at_line_boundary(&self) -> bool {
+        self.next_line_is_start_of_line
+        // || match (self.last_line, self.next_line) {
+        //     // Transitioning to any different line
+        //     (last, Some(next)) => last != Some(next),
+        //     // If next is None then we're halted, so no line transitions
+        //     _ => false,
+        // }
     }
 }
 

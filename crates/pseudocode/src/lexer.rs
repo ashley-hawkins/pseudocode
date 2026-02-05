@@ -450,7 +450,7 @@ fn into_final_tokens<'src>(
 
 #[cfg(test)]
 mod tests {
-    use crate::util::{OneIndexed, SourceContext, SourceLocation};
+    use crate::util::{OneIndexed, SourceLocation};
 
     use super::*;
     #[test]
@@ -478,7 +478,7 @@ else
             (
                 token::Token::Identifier("currentVal"),
                 SourceSpan {
-                    context: SourceContext::None,
+                    context: Default::default(),
                     start: SourceLocation::<OneIndexed>::new(77, 3, 1).to_zero_indexed(),
                     end: SourceLocation::<OneIndexed>::new(87, 3, 11).to_zero_indexed(),
                 }

@@ -210,6 +210,60 @@ pub enum DebugArgSource {
     StringLiteral(String),
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct InstructionAnnotation {
+    pub exempt_from_break: bool,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct AnnotatedInstructionGeneric<Target> {
+    pub instruction: Spanned<InstructionGeneric<Target>>,
+    pub annotation: InstructionAnnotation,
+}
+
+impl<Target> AnnotatedInstructionGeneric<Target> {
+    fn with_span(
+        instruction: Spanned<InstructionGeneric<Target>>,
+        InstructionAnnotation { exempt_from_break }: InstructionAnnotation,
+    ) -> Self {
+        Self {
+            instruction,
+            annotation: InstructionAnnotation { exempt_from_break },
+        }
+    }
+
+    fn map_intruction<ResultTarget>(
+        self,
+        f: impl FnOnce(InstructionGeneric<Target>) -> InstructionGeneric<ResultTarget>,
+    ) -> AnnotatedInstructionGeneric<ResultTarget> {
+        AnnotatedInstructionGeneric::<ResultTarget> {
+            instruction: self
+                .instruction
+                .span
+                .make_wrapped(f(self.instruction.inner)),
+            annotation: self.annotation,
+        }
+    }
+
+    pub fn wrap_with_span<T>(&self, obj: T) -> Spanned<T> {
+        self.instruction.span.make_wrapped(obj)
+    }
+}
+
+impl<Target> From<Spanned<InstructionGeneric<Target>>> for AnnotatedInstructionGeneric<Target> {
+    fn from(instruction: Spanned<InstructionGeneric<Target>>) -> Self {
+        Self::with_span(
+            instruction,
+            InstructionAnnotation {
+                exempt_from_break: false,
+            },
+        )
+    }
+}
+
+pub type AnnotatedInstruction = AnnotatedInstructionGeneric<usize>;
+pub type AnnotatedInstructionRelative = AnnotatedInstructionGeneric<RelativeTarget>;
+
 // Generic instruction form where control-flow targets can vary (labels in pass 1, indices in pass 2).
 #[derive(Clone, PartialEq, Debug)]
 pub enum InstructionGeneric<Target> {
@@ -293,7 +347,7 @@ pub type Instruction = InstructionGeneric<usize>;
 
 enum InstructionGenerationUnit {
     Placeholder,
-    Instruction(Spanned<InstructionRelative>),
+    Instruction(AnnotatedInstructionRelative),
 }
 
 struct InstructionGenerationContext {
@@ -327,18 +381,22 @@ impl InstructionGenerationContext {
         offset
     }
 
-    fn push_instruction(&mut self, instruction: Spanned<InstructionRelative>) -> usize {
+    fn push_instruction(&mut self, instruction: impl Into<AnnotatedInstructionRelative>) -> usize {
         let offset = self.next_instruction_index();
         self.instructions
-            .push(InstructionGenerationUnit::Instruction(instruction));
+            .push(InstructionGenerationUnit::Instruction(instruction.into()));
         if let Some(label) = self.next_label.take() {
             self.labels.entry(label).or_insert(offset);
         }
         offset
     }
 
-    fn replace_instruction(&mut self, offset: usize, instruction: Spanned<InstructionRelative>) {
-        self.instructions[offset] = InstructionGenerationUnit::Instruction(instruction);
+    fn replace_instruction(
+        &mut self,
+        offset: usize,
+        instruction: impl Into<AnnotatedInstructionRelative>,
+    ) {
+        self.instructions[offset] = InstructionGenerationUnit::Instruction(instruction.into());
     }
 
     fn push<G: GenerateInstructions>(&mut self, generator: &G) {
@@ -349,7 +407,7 @@ impl InstructionGenerationContext {
         self.instructions.len()
     }
 
-    fn finalize(self) -> Vec<Spanned<Instruction>> {
+    fn finalize(self) -> Vec<AnnotatedInstruction> {
         let Self {
             labels,
             instructions,
@@ -413,9 +471,9 @@ impl InstructionGenerationContext {
                 InstructionGenerationUnit::Placeholder => {
                     panic!("Unresolved instruction placeholder during finalization")
                 }
-                InstructionGenerationUnit::Instruction(instr) => instr
-                    .span
-                    .make_wrapped(finalize_single_instruction(instr.inner)),
+                InstructionGenerationUnit::Instruction(instr) => {
+                    instr.map_intruction(&finalize_single_instruction)
+                }
             })
             .collect()
     }
@@ -751,10 +809,15 @@ impl GenerateInstructions for Spanned<WhileStatement<'_>> {
 
         context.push(&self.inner.body);
 
-        context.push_instruction(self.span.make_wrapped(InstructionRelative::Jump {
-            is_conditional: false,
-            target: RelativeTarget::Index(start_pos),
-        }));
+        context.push_instruction(AnnotatedInstructionRelative::with_span(
+            self.span.make_wrapped(InstructionRelative::Jump {
+                is_conditional: false,
+                target: RelativeTarget::Index(start_pos),
+            }),
+            InstructionAnnotation {
+                exempt_from_break: true,
+            },
+        ));
 
         context.replace_instruction(
             jump_placeholder_pos,
@@ -853,7 +916,7 @@ impl GenerateInstructions for AstRoot<'_> {
     }
 }
 
-pub fn generate_instructions_for_ast(ast: &AstRoot<'_>) -> Vec<Spanned<Instruction>> {
+pub fn generate_instructions_for_ast(ast: &AstRoot<'_>) -> Vec<AnnotatedInstruction> {
     let mut context = InstructionGenerationContext::new();
     context.push(ast);
     context.finalize()

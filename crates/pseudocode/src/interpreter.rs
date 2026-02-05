@@ -3,7 +3,7 @@ use std::{collections::HashMap, io};
 use chumsky::span::WrappingSpan;
 
 use crate::{
-    instruction::{EnsureType, Instruction, Value},
+    instruction::{AnnotatedInstruction, EnsureType, Instruction, Value},
     type_checker::Type,
     util::{SourceSpan, Spanned},
 };
@@ -26,8 +26,8 @@ pub struct Frame {
     pub return_address: Option<usize>,
 }
 
-pub type Program = [Spanned<Instruction>];
-pub type OwnedProgram = Vec<Spanned<Instruction>>;
+pub type Program = [AnnotatedInstruction];
+pub type OwnedProgram = Vec<AnnotatedInstruction>;
 
 pub struct InterpreterState {
     pub last_instruction_offset: Option<usize>,
@@ -249,11 +249,12 @@ impl InterpreterState {
 
     fn prepare_function_call(
         &mut self,
-        function_header: &Spanned<Instruction>,
+        function_header: &AnnotatedInstruction,
         argument_count: usize,
         function_offset: usize,
     ) -> ControlFlow {
-        let Instruction::FunctionHeader { parameter_count } = &function_header.inner else {
+        let Instruction::FunctionHeader { parameter_count } = &function_header.instruction.inner
+        else {
             panic!("Function call target is not function metadata");
         };
 
@@ -271,15 +272,15 @@ impl InterpreterState {
         program: &Program,
         print_dest: &mut impl std::io::Write,
     ) -> Result<ControlFlow, RuntimeError> {
-        let instruction = &program[self.instruction_offset];
+        let annotated_instruction = &program[self.instruction_offset];
 
-        match &instruction.inner {
+        match &annotated_instruction.instruction.inner {
             Instruction::Push(crate::instruction::PushSource::Literal(literal)) => {
-                self.push_value(instruction.span.make_wrapped(literal.clone()));
+                self.push_value(annotated_instruction.wrap_with_span(literal.clone()));
             }
             Instruction::Push(crate::instruction::PushSource::Environment(src)) => {
                 let val = self.var_from_current_frame(src);
-                self.push_value(instruction.span.make_wrapped(val));
+                self.push_value(annotated_instruction.wrap_with_span(val));
             }
             Instruction::Pop(crate::instruction::PopDestination::Environment(dest)) => {
                 let new_val = self.pop_value().inner.deep_clone();
@@ -308,12 +309,12 @@ impl InterpreterState {
             }
             Instruction::Binary { op } => {
                 let res = self.binary_operation(op)?;
-                self.push_value(instruction.span.make_wrapped(res));
+                self.push_value(annotated_instruction.wrap_with_span(res));
             }
             Instruction::Unary(unary_operator) => {
                 // todo: have a span for the operand
                 let res = self.unary_operation(unary_operator)?;
-                self.push_value(instruction.span.make_wrapped(res));
+                self.push_value(annotated_instruction.wrap_with_span(res));
             }
             Instruction::ArrayBuild => {
                 let array_size = self.pop_value().ensure_int()? as usize;
@@ -323,7 +324,7 @@ impl InterpreterState {
                     elements.push(Value::Number(0.0));
                 }
 
-                self.push_value(instruction.span.make_wrapped(Value::from(elements)));
+                self.push_value(annotated_instruction.wrap_with_span(Value::from(elements)));
             }
             Instruction::ArrayLiteral { length } => {
                 let array_length = *length;
@@ -334,7 +335,7 @@ impl InterpreterState {
                     elements.push(self.pop_value().inner.move_or_deep_clone());
                 }
 
-                self.push_value(instruction.span.make_wrapped(Value::from(elements)));
+                self.push_value(annotated_instruction.wrap_with_span(Value::from(elements)));
             }
             Instruction::ArrayIndex => {
                 let index = self.pop_value().ensure_int()? as usize;
@@ -342,7 +343,7 @@ impl InterpreterState {
 
                 let array_ref = arr.borrow();
                 let result = array_ref[index].clone();
-                self.push_value(instruction.span.make_wrapped(result));
+                self.push_value(annotated_instruction.wrap_with_span(result));
             }
             Instruction::ArraySlice { has_start, has_end } => {
                 let end = if *has_end {
@@ -370,7 +371,7 @@ impl InterpreterState {
                         .collect::<Vec<_>>(),
                 );
 
-                self.push_value(instruction.span.make_wrapped(result));
+                self.push_value(annotated_instruction.wrap_with_span(result));
             }
             Instruction::FunctionCall { target, arg_count } => {
                 return Ok(self.prepare_function_call(&program[*target], *arg_count, *target));
