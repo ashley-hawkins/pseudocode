@@ -2,12 +2,10 @@
 
 ### Web UI
 
-#### Misc
+#### Functionality
 
-- [ ] Move interpreter into a web worker so it doesn't need to yield every 10k instructions
+- [ ] Move interpreter into a web worker so it doesn't need to yield every 10k instructions to keep the page responsive
 - [ ] Completely program running from the editor component - editor should only be for the input code, the breakpoints, and the current line display
-- [ ] Make the frames component better. Make each frame be displayed more distinctly, probably with a border.
-- [ ] Fix x-scrolling on the terminal-like output panel, rather than hiding overflow.
 - [ ] Save state for the environment editor (will persist)
 - [ ] Save state for the output panel (not to persist)
 - [ ] Save state for the frame stack display (not to persist)
@@ -15,6 +13,10 @@
 - [ ] Save current editor state, per language
 - [ ] Allow naming and saving a program to local storage, and re-loading it
 - [ ] Provide sample programs for each language (maybe incorporated into the same system that is used to load saved user-written programs from local storage)
+
+#### Visual/Layout
+- [ ] Fix x-scrolling on the terminal-like output panel, rather than hiding overflow.
+- [ ] Make the frames component better. Make each frame be displayed more distinctly, probably with a border.
 
 #### Debugger
 - [x] Figure out how to avoid implicit returns behaving weirdly
