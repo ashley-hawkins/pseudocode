@@ -17,8 +17,8 @@
 - [ ] Provide sample programs for each language (maybe incorporated into the same system that is used to load saved user-written programs from local storage)
 
 #### Debugger
-- [ ] Figure out how to avoid implicit returns behaving weirdly
-- [ ] Figure out why breakpoints set on the first line of the program are not triggered (for procedural, the first line of the program is the first statement in Algorithm: block)
+- [x] Figure out how to avoid implicit returns behaving weirdly
+- [x] Figure out why breakpoints set on the first line of the program are not triggered (for procedural, the first line of the program is the first statement in Algorithm: block)
 
 ### Interpreter
 - [ ] Fully serialize and deserialize interpreter state to JSON... Need to be able to create shared values in the same way as they were shared in the original state somehow (for arrays).
