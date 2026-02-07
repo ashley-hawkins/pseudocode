@@ -10,6 +10,7 @@ import OutputPanel from './OutputPanel.tsx';
 import type { JSXElement } from 'solid-js';
 import { EnvironmentSelector } from './EnvironmentSelector.tsx';
 import type { IGoldenLayoutProps } from './types.ts';
+import { FrameStackDisplay } from './FrameStackDisplay.tsx';
 
 const solidFactory = (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)): GoldenLayout.ComponentFactoryFunction => {
     console.log("Creating Solid Component:", TheComponent.name);
@@ -46,14 +47,26 @@ if (!new URL(window.location.href).searchParams.has("gl-window")) {
                 type: 'component',
                 componentType: ProgramEditor.name,
                 title: 'Code Editor',
-            }, {
+            },
+            {
                 type: 'component',
                 componentType: OutputPanel.name,
                 title: 'Output Panel',
-            }, {
-                type: 'component',
-                componentType: EnvironmentSelector.name,
-                title: 'Environment Selector',
+            },
+            {
+                type: 'column',
+                content: [
+                    {
+                        type: 'component',
+                        componentType: EnvironmentSelector.name,
+                        title: 'Environment Selector',
+                    },
+                    {
+                        type: 'component',
+                        componentType: FrameStackDisplay.name,
+                        title: 'Frames',
+                    }
+                ]
             }]
         },
     }
@@ -65,5 +78,6 @@ layout.resizeWithContainerAutomatically = true;
 layout.registerSolidComponent(ProgramEditor)
 layout.registerSolidComponent(OutputPanel)
 layout.registerSolidComponent(EnvironmentSelector)
+layout.registerSolidComponent(FrameStackDisplay)
 
 layout.loadLayout(layoutConfig);

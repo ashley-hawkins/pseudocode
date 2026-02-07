@@ -2,7 +2,8 @@ import type { ComponentContainer, EventHub, JsonValue } from "golden-layout";
 
 export const enum UserBroadcastType {
   parserOutput,
-  envVarsUpdate
+  envVarsUpdate,
+  frameStackUpdate
 }
 
 interface ParserOutputBroadcastData {
@@ -15,7 +16,12 @@ interface EnvVarsUpdateBroadcastData {
   envVars: { key: string, value: string }[]
 }
 
-export type UserBroadcastData = ParserOutputBroadcastData | EnvVarsUpdateBroadcastData;
+interface FrameStackUpdateBroadcastData {
+  type: UserBroadcastType.frameStackUpdate,
+  frameStack: Map<string, any>[]
+}
+
+export type UserBroadcastData = ParserOutputBroadcastData | EnvVarsUpdateBroadcastData | FrameStackUpdateBroadcastData;
 
 export function emitUserBroadcast (eventHub: EventHub, data: UserBroadcastData) {
   eventHub.emit('userBroadcast', data);

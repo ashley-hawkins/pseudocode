@@ -155,10 +155,16 @@ export interface ProgramEditorState {
 
 export default function ProgramEditor(props: IGoldenLayoutProps) {
   const [parserOutput, setParserOutput] = createSignal<string>("")
+  const [frameStack, setFrameStack] = createSignal<Map<string, any>[]>([])
+
   let envVars: { key: string, value: string }[] = []
 
   createEffect(() => {
     emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.parserOutput, output: parserOutput() });
+  })
+
+  createEffect(() => {
+    emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.frameStackUpdate, frameStack: frameStack() });
   })
 
   const wrapper = new ProgramWrapper()
@@ -272,6 +278,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
         previousLine,
         nextLine
       )
+      setFrameStack(wrapper.current_frames())
     }
 
     let counter = 0
