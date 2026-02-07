@@ -15,7 +15,7 @@
 - [ ] Provide sample programs for each language (maybe incorporated into the same system that is used to load saved user-written programs from local storage)
 
 #### Visual/Layout
-- [ ] Fix x-scrolling on the terminal-like output panel, rather than hiding overflow.
+- [x] Fix x-scrolling on the terminal-like output panel, rather than hiding overflow.
 - [ ] Make the frames component better. Make each frame be displayed more distinctly, probably with a border.
 
 #### Debugger
