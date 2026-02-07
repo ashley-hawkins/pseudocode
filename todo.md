@@ -13,6 +13,7 @@
 - [ ] Save current editor state, per language
 - [ ] Allow naming and saving a program to local storage, and re-loading it
 - [ ] Provide sample programs for each language (maybe incorporated into the same system that is used to load saved user-written programs from local storage)
+- [ ] Display the final output of the program
 
 #### Visual/Layout
 - [x] Fix x-scrolling on the terminal-like output panel, rather than hiding overflow.
