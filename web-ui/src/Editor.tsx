@@ -252,6 +252,8 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
 
       if (next === undefined) {
         // Program has halted
+        previousLine = nextLine;
+        nextLine = undefined;
         return true
       }
 
