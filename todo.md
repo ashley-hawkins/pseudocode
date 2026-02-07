@@ -10,3 +10,6 @@
 - [ ] Save current editor state, per language
 - [ ] Allow naming and saving a program to local storage, and re-loading it
 - [ ] Provide sample programs for each language (maybe incorporated into the same system that is used to load saved user-written programs from local storage)
+
+### Lexer
+- [ ] For the implicit dedentation at EOF, do not include a newline token.

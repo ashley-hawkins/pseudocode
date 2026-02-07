@@ -614,6 +614,7 @@ pub fn cmdline_assignment<'src, I: Input<'src>>()
         .spanned()
         .then_ignore(just(Token::Colon))
         .then(expr(false))
+        .then_ignore(just(Token::Newline))
         .then_ignore(end())
         .map(|(name, expression)| AssignmentStatement {
             lhs: AssignmentLhs::Variable(name),
