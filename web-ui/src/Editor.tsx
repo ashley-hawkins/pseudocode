@@ -318,9 +318,9 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
         }
         counter += 1
       }
+      updateVisuals()
+      setCurrentlyRunning(false);
     }
-    updateVisuals()
-    setCurrentlyRunning(false);
   }
 
   let continueWithBreakpointSet = (breakpoints: Set<number>, firstStep: boolean = false) => {
