@@ -298,10 +298,10 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
           break
         }
 
-        // Yield every 10000 steps to make sure the UI isn't blocked.
-        await new Promise((resolve) => setTimeout(resolve, 0))
-        updateVisuals()
         if (counter > 10000) {
+          // Yield every 10000 steps to make sure the UI isn't blocked.
+          updateVisuals()
+          await new Promise((resolve) => setTimeout(resolve, 0))
           counter = 0
         }
         counter += 1
