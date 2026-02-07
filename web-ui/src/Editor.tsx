@@ -280,8 +280,9 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     let nextLine = initialQueryResult.next_line
     let previousLine = initialQueryResult.last_line;
     if (initialQueryResult.next_line !== undefined) {
-      while (true) {
-        wrapper.step()
+      let shouldContinue = true;
+      while (shouldContinue) {
+        shouldContinue = wrapper.step()
 
         if (forceStop) {
           forceStop = false
