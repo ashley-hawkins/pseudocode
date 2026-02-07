@@ -171,7 +171,7 @@ enum LexerToken<'a> {
         handle_whitespace
     )]
     Newline(NewlineMetadata),
-
+    Eof(NewlineMetadata),
     #[regex(".", priority = 0, callback = |lex| lex.slice().chars().next().unwrap())]
     UnexpectedCharacter(char),
 }
@@ -315,79 +315,83 @@ pub fn lex_str<'src>(
         let mut previous_was_newline_state = false;
         let mut queue: VecDeque<(token::Token, SourceSpan)> = VecDeque::new();
         move || -> Option<(Result<token::Token, LexerError>, SourceSpan)> {
-            let previous_was_newline = previous_was_newline_state;
-            previous_was_newline_state = false;
-            if let Some((token, span)) = queue.pop_front() {
-                if token == token::Token::Newline {
-                    previous_was_newline_state = true;
-                }
-                return Some((Ok(token), span));
-            }
-
-            if done || failed {
-                return None;
-            }
-
-            let Some(mut res) = (match lexer.next() {
-                Some(tok) => Some(tok),
-                None => {
-                    if !previous_was_newline {
-                        let fake_end_span = lexer.span().end..lexer.span().end;
-                        Some(
-                            calculate_indentation(0, &mut lexer.extras, fake_end_span)
-                                .map(LexerToken::Newline),
-                        )
-                    } else {
-                        None
-                    }
-                }
-            }) else {
-                done = true;
-                return None;
-            };
-
-            if once_flag {
-                once_flag = false;
-                if matches!(
-                    res,
-                    Ok(LexerToken::Newline(NewlineMetadata {
-                        indentation_change: None,
-                        ..
-                    }))
-                ) {
-                    res = lexer.next()?;
-                }
-            }
-
-            let res = into_final_tokens(res, lexer.span());
-
-            match res {
-                Err((e, span)) => {
-                    failed = true;
-                    Some((
-                        Err(e),
-                        source_byte_range_to_source_span(span, &lexer.extras.line_offsets),
-                    ))
-                }
-                Ok(((main_token, main_token_span), additional_tokens)) => {
-                    queue.extend(additional_tokens.into_iter().map(|(t, s)| {
-                        (
-                            t,
-                            source_byte_range_to_source_span(s, &lexer.extras.line_offsets),
-                        )
-                    }));
-
-                    if main_token == token::Token::Newline {
+            loop {
+                let previous_was_newline = previous_was_newline_state;
+                previous_was_newline_state = false;
+                if let Some((token, span)) = queue.pop_front() {
+                    if token == token::Token::Newline {
                         previous_was_newline_state = true;
                     }
+                    return Some((Ok(token), span));
+                }
 
-                    Some((
-                        Ok(main_token),
-                        source_byte_range_to_source_span(
-                            main_token_span,
-                            &lexer.extras.line_offsets,
-                        ),
-                    ))
+                if done || failed {
+                    return None;
+                }
+
+                let mut res = (match lexer.next() {
+                    Some(tok) => Some(tok),
+                    None => {
+                        done = true;
+                        if !previous_was_newline {
+                            let fake_end_span = lexer.span().end..lexer.span().end;
+                            Some(
+                                calculate_indentation(0, &mut lexer.extras, fake_end_span)
+                                    .map(LexerToken::Eof),
+                            )
+                        } else {
+                            None
+                        }
+                    }
+                })?;
+
+                if once_flag {
+                    once_flag = false;
+                    if matches!(
+                        res,
+                        Ok(LexerToken::Newline(NewlineMetadata {
+                            indentation_change: None,
+                            ..
+                        }))
+                    ) {
+                        res = lexer.next()?;
+                    }
+                }
+
+                let res = into_final_tokens(res, lexer.span());
+
+                match res {
+                    Err((e, span)) => {
+                        failed = true;
+                        return Some((
+                            Err(e),
+                            source_byte_range_to_source_span(span, &lexer.extras.line_offsets),
+                        ));
+                    }
+                    Ok((Some((main_token, main_token_span)), additional_tokens)) => {
+                        queue.extend(additional_tokens.into_iter().map(|(t, s)| {
+                            (
+                                t,
+                                source_byte_range_to_source_span(s, &lexer.extras.line_offsets),
+                            )
+                        }));
+
+                        if main_token == token::Token::Newline {
+                            previous_was_newline_state = true;
+                        }
+
+                        return Some((
+                            Ok(main_token),
+                            source_byte_range_to_source_span(
+                                main_token_span,
+                                &lexer.extras.line_offsets,
+                            ),
+                        ));
+                    }
+                    // This token ends up emitting nothing, so just process the next token.
+                    Ok((None, _)) => {
+                        continue;
+                    }
                 }
             }
         }
@@ -400,15 +404,37 @@ fn into_final_tokens<'src>(
     source_location: Range<usize>,
 ) -> Result<
     (
-        (Token<'src>, Range<usize>),
+        Option<(Token<'src>, Range<usize>)>,
         Vec<(Token<'src>, Range<usize>)>,
     ),
     (LexerError, Range<usize>),
 > {
+    let process_indentation = |newline_metadata, is_eof: bool| {
+        let NewlineMetadata {
+            indentation_change,
+            newline_range,
+        } = newline_metadata;
+
+        match indentation_change {
+            Some(IndentationChange::Indent) => (
+                Some((Token::Indent, newline_range.end..source_location.end)),
+                vec![],
+            ),
+            Some(IndentationChange::Dedent(amount)) => (
+                Some((Token::Dedent, newline_range.end..source_location.end)),
+                (1..amount)
+                    .map(|_| (Token::Dedent, newline_range.end..source_location.end))
+                    .chain((!is_eof).then(|| (Token::Newline, newline_range.clone())))
+                    .collect(),
+            ),
+            None => ((!is_eof).then_some((Token::Newline, newline_range)), vec![]),
+        }
+    };
+
     match source_token {
         Err(e) => Err((e, source_location)),
         Ok(source_token) => Ok((
-            (
+            Some((
                 match source_token {
                     LexerToken::Debug => Token::Debug,
                     LexerToken::DebugLn => Token::DebugLn,
@@ -454,33 +480,16 @@ fn into_final_tokens<'src>(
                     LexerToken::NumberLiteral(n) => Token::NumberLiteral(n),
                     LexerToken::Identifier(s) => Token::Identifier(s),
                     LexerToken::Newline(newline_metadata) => {
-                        let NewlineMetadata {
-                            indentation_change,
-                            newline_range,
-                        } = newline_metadata;
-
-                        return Ok(match indentation_change {
-                            Some(IndentationChange::Indent) => (
-                                (Token::Indent, newline_range.end..source_location.end),
-                                vec![],
-                            ),
-                            Some(IndentationChange::Dedent(amount)) => (
-                                (Token::Dedent, newline_range.end..source_location.end),
-                                (1..amount)
-                                    .map(|_| {
-                                        (Token::Dedent, newline_range.end..source_location.end)
-                                    })
-                                    .chain(std::iter::once((Token::Newline, newline_range.clone())))
-                                    .collect(),
-                            ),
-                            None => ((Token::Newline, newline_range), vec![]),
-                        });
+                        return Ok(process_indentation(newline_metadata, false));
+                    }
+                    LexerToken::Eof(newline_metadata) => {
+                        return Ok(process_indentation(newline_metadata, true));
                     }
                     LexerToken::UnexpectedCharacter(c) => Token::UnexpectedCharacter(c),
                     LexerToken::StringLiteral(s) => Token::StringLiteral(s),
                 },
                 source_location,
-            ),
+            )),
             Vec::new(),
         )),
     }

@@ -16,7 +16,3 @@
 #### Debugger
 - [ ] Figure out how to avoid implicit returns behaving weirdly
 - [ ] Figure out why breakpoints set on the first line of the program are not triggered (for procedural, the first line of the program is the first statement in Algorithm: block)
-
-
-### Lexer
-- [ ] For the implicit dedentation at EOF, do not include a newline token.
