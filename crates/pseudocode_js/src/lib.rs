@@ -155,7 +155,7 @@ impl ProgramWrapper {
 
         for (key, value) in env.iter() {
             let wrapped = ValueWrapper(value.clone());
-            obj.set(&JsValue::from_str(key), &wrapped.into());
+            obj.set(&JsValue::from_str(key), &wrapped.as_js());
         }
 
         Some(obj)
