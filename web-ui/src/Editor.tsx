@@ -242,7 +242,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
 
   const [currentlyRunning, setCurrentlyRunning] = createSignal<boolean>(false);
 
-  let stepProgram = async (stepOptions: StepOptions) => {
+  let stepProgram = async (stepOptions: StepOptions, firstStep: boolean = false) => {
     if (currentlyRunning()) {
       return
     }
@@ -290,6 +290,9 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     let previousLine = initialQueryResult.last_line;
     if (initialQueryResult.next_line !== undefined) {
       let shouldContinue = true;
+      if (firstStep) {
+        shouldContinue = !finishedStepping(initialQueryResult)
+      }
       while (shouldContinue) {
         shouldContinue = wrapper.step()
 
@@ -320,18 +323,18 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     setCurrentlyRunning(false);
   }
 
-  let continueWithBreakpointSet = (breakpoints: Set<number>) => {
-    stepProgram({ type: StepType.LineBasedBreakpoint, breakpoints })
+  let continueWithBreakpointSet = (breakpoints: Set<number>, firstStep: boolean = false) => {
+    stepProgram({ type: StepType.LineBasedBreakpoint, breakpoints }, firstStep)
   }
 
-  let continueProgramToNextBreakpoint = () => {
+  let continueProgramToNextBreakpoint = (firstStep: boolean = false) => {
     forceStop = false
     let breakpoints = new Set<number>()
     editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, to) => {
       const line = editor.state.doc.lineAt(from)
       breakpoints.add(line.number - 1)
     })
-    continueWithBreakpointSet(breakpoints)
+    continueWithBreakpointSet(breakpoints, firstStep)
   }
 
   let continueProgramToCompletion = () => {
@@ -346,7 +349,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     const src = editor?.state?.doc.toString() ?? ''
     if (wrapper.load_source(src, selectedMode)) {
       wrapper.reset_state_with_environment(envVars.map((ev) => `${ev.key}:${ev.value}`))
-      continueProgramToNextBreakpoint()
+      continueProgramToNextBreakpoint(true)
     } else {
       setParserOutput(wrapper.output() || 'No parser output.')
     }
@@ -374,7 +377,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
                 <button class="btn flex-1" onClick={runProgram}>Run</button>
               )
             }
-            <button class="btn flex-1" onClick={continueProgramToNextBreakpoint}>Continue</button>
+            <button class="btn flex-1" onClick={() => continueProgramToNextBreakpoint()}>Continue</button>
             <button class="btn flex-1" onClick={stepLine}>Step</button>
           </div>
           <div ref={codeDiv} class="flex flex-1 bg-base-200 rounded-md border-base-300"></div>
