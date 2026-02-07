@@ -259,6 +259,17 @@ fn handle_whitespace<'src>(
 
     let newline_range = (span.start + first_newline)..(span.start + last_newline + 1);
 
+    match calculate_indentation(indentation_len, state, newline_range) {
+        Ok(metadata) => Emit(metadata),
+        Err(e) => Error(e),
+    }
+}
+
+fn calculate_indentation(
+    indentation_len: usize,
+    state: &mut LexerState,
+    newline_range: Range<usize>,
+) -> Result<NewlineMetadata, LexerError> {
     match indentation_len.cmp(&state.indent_stack.last().copied().unwrap_or(0)) {
         std::cmp::Ordering::Less => {
             let mut dedent_count = 0;
@@ -271,20 +282,20 @@ fn handle_whitespace<'src>(
                 }
             }
             if state.indent_stack.last().copied().unwrap_or(0) != indentation_len {
-                return Error(TokenValidationError::UnexpectedDedent(newline_range).into());
+                return Err(TokenValidationError::UnexpectedDedent(newline_range).into());
             }
-            Emit(NewlineMetadata {
+            Ok(NewlineMetadata {
                 indentation_change: Some(IndentationChange::Dedent(dedent_count)),
                 newline_range,
             })
         }
-        std::cmp::Ordering::Equal => Emit(NewlineMetadata {
+        std::cmp::Ordering::Equal => Ok(NewlineMetadata {
             indentation_change: None,
             newline_range,
         }),
         std::cmp::Ordering::Greater => {
             state.indent_stack.push(indentation_len);
-            Emit(NewlineMetadata {
+            Ok(NewlineMetadata {
                 indentation_change: Some(IndentationChange::Indent),
                 newline_range,
             })
@@ -299,18 +310,41 @@ pub fn lex_str<'src>(
 
     std::iter::from_fn({
         let mut once_flag = true;
+        let mut done = false;
         let mut failed = false;
+        let mut previous_was_newline_state = false;
         let mut queue: VecDeque<(token::Token, SourceSpan)> = VecDeque::new();
         move || -> Option<(Result<token::Token, LexerError>, SourceSpan)> {
-            if failed {
-                return None;
-            }
-
+            let previous_was_newline = previous_was_newline_state;
+            previous_was_newline_state = false;
             if let Some((token, span)) = queue.pop_front() {
+                if token == token::Token::Newline {
+                    previous_was_newline_state = true;
+                }
                 return Some((Ok(token), span));
             }
 
-            let mut res = lexer.next()?;
+            if done || failed {
+                return None;
+            }
+
+            let Some(mut res) = (match lexer.next() {
+                Some(tok) => Some(tok),
+                None => {
+                    if !previous_was_newline {
+                        let fake_end_span = lexer.span().end..lexer.span().end;
+                        Some(
+                            calculate_indentation(0, &mut lexer.extras, fake_end_span)
+                                .map(LexerToken::Newline),
+                        )
+                    } else {
+                        None
+                    }
+                }
+            }) else {
+                done = true;
+                return None;
+            };
 
             if once_flag {
                 once_flag = false;
@@ -342,6 +376,10 @@ pub fn lex_str<'src>(
                             source_byte_range_to_source_span(s, &lexer.extras.line_offsets),
                         )
                     }));
+
+                    if main_token == token::Token::Newline {
+                        previous_was_newline_state = true;
+                    }
 
                     Some((
                         Ok(main_token),
