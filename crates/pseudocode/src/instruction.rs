@@ -1056,7 +1056,9 @@ impl GenerateInstructions for Spanned<ProcedureDefinition<'_>> {
             &self
                 .span
                 .make_wrapped(Statement::Return(ReturnStatement { expr: None })),
-            annotation,
+            annotation.or(Some(InstructionAnnotation {
+                exempt_from_break: true,
+            })),
         );
     }
 }
@@ -1075,7 +1077,9 @@ impl GenerateInstructions for AstRoot<'_> {
                 .main_algorithm
                 .span
                 .make_wrapped(Statement::Return(ReturnStatement { expr: None })),
-            annotation,
+            annotation.or(Some(InstructionAnnotation {
+                exempt_from_break: true,
+            })),
         );
 
         for procedure in &self.procedures {
