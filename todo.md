@@ -5,7 +5,7 @@
 #### Functionality
 
 - [ ] Move interpreter into a web worker so it doesn't need to yield every 10k instructions to keep the page responsive
-- [ ] Completely program running from the editor component - editor should only be for the input code, the breakpoints, and the current line display
+- [ ] Completely decouple program running from the editor component - editor should only be for the input code, the breakpoints, and the current line display
 - [ ] Save state for the environment editor (will persist)
 - [ ] Save state for the output panel (not to persist)
 - [ ] Save state for the frame stack display (not to persist)
