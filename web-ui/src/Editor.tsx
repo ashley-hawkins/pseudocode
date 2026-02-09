@@ -1,15 +1,14 @@
 import { createEffect, createSignal, onMount } from 'solid-js'
 
-import { LineQueryResult, Mode, ProgramWrapper } from 'pseudocode_js'
-import pseudocodeInit from 'pseudocode_js'
+import { Mode } from 'pseudocode_js'
+import ProgramWorkerClient from './programWorkerClient'
 import { EditorView, basicSetup } from 'codemirror'
 import { gutter, GutterMarker } from '@codemirror/view'
 import { emitUserBroadcast, onUserBroadcast, UserBroadcastType, type IGoldenLayoutProps, type UserBroadcastData } from './types'
 
-await pseudocodeInit();
-
 import { StateField, StateEffect, RangeSet, EditorState, Transaction, Range } from "@codemirror/state"
 import type { JsonValue } from 'golden-layout'
+import { RunMode, type RunOptions } from './workerProtocol'
 
 const nextExecutionMarker = new class extends GutterMarker {
   elementClass: string = "cm-next-execution-marker"
@@ -31,7 +30,7 @@ const executionState = StateField.define<{
   lastLinePos?: number;
   nextLinePos?: number;
 }>({
-  create: function (state: EditorState): { lastLinePos?: number; nextLinePos?: number } {
+  create: function (_state: EditorState): { lastLinePos?: number; nextLinePos?: number } {
     return {}
   },
   update: function (value: { lastLinePos?: number; nextLinePos?: number }, transaction: Transaction): { lastLinePos?: number; nextLinePos?: number } {
@@ -167,15 +166,13 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.frameStackUpdate, frameStack: frameStack() });
   })
 
-  const wrapper = new ProgramWrapper()
+  let workerClient: ProgramWorkerClient = new ProgramWorkerClient()
 
   onUserBroadcast(props.glContainer.layoutManager.eventHub, (broadcastData: UserBroadcastData) => {
     if (broadcastData.type === UserBroadcastType.envVarsUpdate) {
       envVars = broadcastData.envVars
     }
   })
-
-  let forceStop = false
 
   let editor: EditorView
   let codeDiv
@@ -210,7 +207,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
         baseState: editor.state.toJSON(),
         breakpoints: (() => {
           let bps: Set<number> = new Set()
-          editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, to) => {
+          editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, _to) => {
             const line = editor.state.doc.lineAt(from)
             bps.add(line.number - 1)
           })
@@ -223,135 +220,62 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
 
   let selectedMode: Mode = Mode.Structured
 
-  const enum StepType {
-    LineBasedBreakpoint,
-    NextLine,
-    ToCompletion
-  }
-
-  interface StepBreakpointOptions {
-    type: StepType.LineBasedBreakpoint,
-    breakpoints: Set<number>
-  }
-
-  interface StepNextLineOptions {
-    type: StepType.NextLine
-  }
-
-  type StepOptions = StepBreakpointOptions | StepNextLineOptions
-
   const [currentlyRunning, setCurrentlyRunning] = createSignal<boolean>(false);
 
-  let stepProgram = async (stepOptions: StepOptions, firstStep: boolean = false) => {
+  let stepProgram = async (runOptions: RunOptions, firstStep: boolean = false) => {
     if (currentlyRunning()) {
       return
     }
     setCurrentlyRunning(true);
-    let finishedStepping = (queryResult: LineQueryResult): boolean => {
-      const next = queryResult.next_line
+    let previousLine: number | undefined = undefined
+    let nextLine: number | undefined = undefined
 
-      if (next === undefined) {
-        // Program has halted
-        previousLine = nextLine;
-        nextLine = undefined;
-        return true
-      }
+    const runResult = await workerClient.run(runOptions, firstStep)
 
-      // This is not a transition between lines
-      if (!queryResult.at_line_boundary()) {
-        return false
-      }
-
-      if (stepOptions.type === StepType.LineBasedBreakpoint) {
-        // About to hit a breakpoint
-        return stepOptions.breakpoints.has(next)
-      } else if (stepOptions.type === StepType.NextLine) {
-        // About to transition to the next line
-        return true
-      } else {
-        throw new Error("Invalid step option type")
-      }
+    if (runResult.type === 'error') {
+      setParserOutput(`Error during execution: ${runResult.message}`)
+      setCurrentlyRunning(false)
+      return
     }
 
-    const updateVisuals = () => {
-      setParserOutput(wrapper.output() || 'No runtime output.')
-      setExecutionState(
-        editor,
-        previousLine,
-        nextLine
-      )
-      setFrameStack(wrapper.current_frames())
-    }
+    previousLine = runResult.lastLine
+    nextLine = runResult.nextLine
 
-    let counter = 0
-
-    const initialQueryResult = wrapper.query_source_lines()
-    let nextLine = initialQueryResult.next_line
-    let previousLine = initialQueryResult.last_line;
-    if (initialQueryResult.next_line !== undefined) {
-      let shouldContinue = true;
-      if (firstStep) {
-        shouldContinue = !finishedStepping(initialQueryResult)
-      }
-      while (shouldContinue) {
-        shouldContinue = wrapper.step()
-
-        if (forceStop) {
-          forceStop = false
-          break
-        }
-
-        const queryResult = wrapper.query_source_lines()
-        if (queryResult.at_line_boundary()) {
-          previousLine = nextLine;
-          nextLine = queryResult.next_line;
-        }
-        if (finishedStepping(queryResult)) {
-          break
-        }
-
-        if (counter > 10000) {
-          // Yield every 10000 steps to make sure the UI isn't blocked.
-          updateVisuals()
-          await new Promise((resolve) => setTimeout(resolve, 0))
-          counter = 0
-        }
-        counter += 1
-      }
-      updateVisuals()
-      setCurrentlyRunning(false);
-    }
+    setParserOutput(runResult.output || 'No runtime output.')
+    setExecutionState(editor, previousLine, nextLine)
+    setFrameStack(runResult.frames)
+    setCurrentlyRunning(false)
   }
 
   let continueWithBreakpointSet = (breakpoints: Set<number>, firstStep: boolean = false) => {
-    stepProgram({ type: StepType.LineBasedBreakpoint, breakpoints }, firstStep)
+    stepProgram({ type: RunMode.LineBasedBreakpoint, breakpoints }, firstStep)
   }
 
   let continueProgramToNextBreakpoint = (firstStep: boolean = false) => {
-    forceStop = false
     let breakpoints = new Set<number>()
-    editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, to) => {
+    editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, _to) => {
       const line = editor.state.doc.lineAt(from)
       breakpoints.add(line.number - 1)
     })
     continueWithBreakpointSet(breakpoints, firstStep)
   }
 
-  let continueProgramToCompletion = () => {
-    continueWithBreakpointSet(new Set)
-  }
-
   let stepLine = () => {
-    stepProgram({ type: StepType.NextLine })
+    stepProgram({ type: RunMode.NextLine })
   }
 
-  let runProgram = () => {
+  let runProgram = async () => {
     const src = editor?.state?.doc.toString() ?? ''
-    if (wrapper.load_source(src, selectedMode)) {
-      wrapper.reset_state_with_environment(envVars.map((ev) => `${ev.key}:${ev.value}`))
+    const loadRes = await workerClient.loadSource(src, selectedMode)
+    if (loadRes.type != 'error' && loadRes.ok) {
+      await workerClient.resetWithEnv(envVars.map((ev) => `${ev.key}:${ev.value}`))
       continueProgramToNextBreakpoint(true)
     } else {
-      setParserOutput(wrapper.output() || 'No parser output.')
+      if (loadRes.type === 'error') {
+        setParserOutput(`Error loading program: ${loadRes.message}`)
+      } else {
+        setParserOutput(loadRes.output || 'No parser output.')
+      }
     }
   }
 
@@ -372,7 +296,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
             </select>
             {
               currentlyRunning() ? (
-                <button class="btn flex-1" onClick={() => { forceStop = true }}>Stop</button>
+                <button class="btn flex-1" onClick={() => workerClient.stop()}>Stop</button>
               ) : (
                 <button class="btn flex-1" onClick={runProgram}>Run</button>
               )
