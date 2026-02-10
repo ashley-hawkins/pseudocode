@@ -1,5 +1,5 @@
 import pseudocodeInit, { ProgramJs, Mode, ValueJs, StepResultJs } from 'pseudocode_js'
-import { RunMode, type RequestMessage, type ResponseForRequestMessage, type ResponseMessage } from './workerProtocol'
+import { RunMode, type CurrentFramesRequestMessage, type CurrentFramesResponseMessage, type LoadRequestMessage, type LoadResponseMessage, type OutputRequestMessage, type OutputResponseMessage, type QueryLinesRequestMessage, type QueryLinesResponseMessage, type RequestMessage, type ResetRequestMessage, type ResetResponseMessage, type ResponseForRequestMessage, type ResponseMessage, type RunRequestMessage, type RunResponseMessage, type StepRequestMessage, type StepResponseMessage } from './workerProtocol'
 import { valueToString } from './util';
 
 await pseudocodeInit();
@@ -79,11 +79,44 @@ function mapFramesToJs(frames: Array<Map<string, ValueJs>>): Array<Map<string, a
   return frames.map(x => (new Map([...x.entries()].map(([k, v]) => [k, v.toJs()]))))
 }
 
-async function run(m: Extract<RequestMessage, { type: 'run' }>) {
+function load(m: LoadRequestMessage): LoadResponseMessage {
+  const ok = program.loadSource(m.source ?? '', m.mode ?? Mode.Structured)
+  const out = program.output() || ''
+  return { type: 'loadResult', requestId: m.requestId, ok, output: out }
+}
+
+function reset(m: ResetRequestMessage): ResetResponseMessage {
+  program.resetStateWithEnvironment(m.env ?? [])
+  return { type: 'resetResult', requestId: m.requestId } satisfies ResponseForRequestMessage<typeof m>
+}
+
+function queryLines(m: QueryLinesRequestMessage): QueryLinesResponseMessage {
+  const q = program.querySourceLines()
+  return { type: 'queryResult', requestId: m.requestId, last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary() } satisfies ResponseForRequestMessage<typeof m>
+}
+
+function step(m: StepRequestMessage): StepResponseMessage {
+  const stepResult = program.step()
+  const cont = stepResult.shallContinue()
+  const q = program.querySourceLines()
+  const out = program.output() || ''
+  const frames = mapFramesToJs(program.currentFrames())
+  return { type: 'stepResult', requestId: m.requestId, cont, return_value: stepResult.returnValue()?.toJs(), last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
+}
+
+function currentFrames(m: CurrentFramesRequestMessage): CurrentFramesResponseMessage {
+  const frames = mapFramesToJs(program.currentFrames())
+  return { type: 'currentFramesResult', requestId: m.requestId, frames } satisfies ResponseForRequestMessage<typeof m>
+}
+
+function output(m: OutputRequestMessage): OutputResponseMessage {
+  const out = program.output() || ''
+  return { type: 'outputResult', requestId: m.requestId, output: out } satisfies ResponseForRequestMessage<typeof m>
+}
+
+async function run(m: RunRequestMessage): Promise<RunResponseMessage> {
   if (running) {
-    const res: ResponseMessage = { type: 'error', requestId: m.requestId, message: 'Program is already running' } satisfies ResponseForRequestMessage<typeof m>
-    postMessage(res)
-    return;
+    return { type: 'error', requestId: m.requestId, message: 'Program is already running' } satisfies ResponseForRequestMessage<typeof m>
   }
   running = true
   stopRequested = false
@@ -167,68 +200,47 @@ async function run(m: Extract<RequestMessage, { type: 'run' }>) {
 
 
   const frames = mapFramesToJs(program.currentFrames())
-  const res: ResponseMessage = { type: 'runResult', requestId: m.requestId, output: out, lastLine, nextLine, frames }
-  postMessage(res)
   running = false
+  return { type: 'runResult', requestId: m.requestId, output: out, lastLine, nextLine, frames }
+}
+
+function shouldDefer(m: RequestMessage) {
+  return (m.type === 'load' || m.type === 'reset' || m.type === 'step' || m.type === 'run') && running
 }
 
 async function handleMessage(m: RequestMessage) {
+  if (shouldDefer(m)) {
+    msgQueue.push(m)
+    return;
+  }
+
   switch (m.type) {
     case 'load': {
-      if (running) {
-        msgQueue.push(m)
-        return;
-      }
-      const ok = program.loadSource(m.source ?? '', m.mode ?? Mode.Structured)
-      const out = program.output() || ''
-      const res = { type: 'loadResult', requestId: m.requestId, ok, output: out } satisfies ResponseForRequestMessage<typeof m>
-      postMessage(res)
+      postMessage(load(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'reset': {
-      if (running) {
-        msgQueue.push(m)
-        return;
-      }
-      program.resetStateWithEnvironment(m.env ?? [])
-      const res: ResponseMessage = { type: 'resetResult', requestId: m.requestId } satisfies ResponseForRequestMessage<typeof m>
-      postMessage(res)
+      postMessage(reset(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'queryLines': {
-      const q = program.querySourceLines()
-      const res: ResponseMessage = { type: 'queryResult', requestId: m.requestId, last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary() } satisfies ResponseForRequestMessage<typeof m>
-      postMessage(res)
+      postMessage(queryLines(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'step': {
-      if (running) {
-        msgQueue.push(m)
-        return;
-      }
-      const stepResult = program.step()
-      const cont = stepResult.shallContinue()
-      const q = program.querySourceLines()
-      const out = program.output() || ''
-      const frames = mapFramesToJs(program.currentFrames())
-      const res: ResponseMessage = { type: 'stepResult', requestId: m.requestId, cont, return_value: stepResult.returnValue()?.toJs(), last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
-      postMessage(res)
+      postMessage(step(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'currentFrames': {
-      const frames = mapFramesToJs(program.currentFrames())
-      const res: ResponseMessage = { type: 'currentFramesResult', requestId: m.requestId, frames } satisfies ResponseForRequestMessage<typeof m>
-      postMessage(res)
+      postMessage(currentFrames(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'output': {
-      const out = program.output() || ''
-      const res: ResponseMessage = { type: 'outputResult', requestId: m.requestId, output: out } satisfies ResponseForRequestMessage<typeof m>
-      postMessage(res)
+      postMessage(output(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'run': {
-      await run(m)
+      postMessage(await run(m) satisfies ResponseForRequestMessage<typeof m>)
       break
     }
     case 'stop': {

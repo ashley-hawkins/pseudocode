@@ -71,3 +71,26 @@ const requestResponseMap = {
 
 export type ResponseForRequestMessage<T extends RequestMessage> = T extends RequestWithId ? Extract<ResponseMessage, { type: typeof requestResponseMap[T['type']] }> | Extract<ResponseMessage, { type: 'error' }> : never
 export type ResponseForRequestPayload<T extends RequestPayload> = ResponseForRequestMessage<Extract<RequestMessage, { type: T['type'] }>>
+
+export type LoadRequestMessage = Extract<RequestMessage, { type: 'load' }>
+export type LoadResponseMessage = ResponseForRequestMessage<LoadRequestMessage>
+
+export type ResetRequestMessage = Extract<RequestMessage, { type: 'reset' }>
+export type ResetResponseMessage = ResponseForRequestMessage<ResetRequestMessage>
+
+export type QueryLinesRequestMessage = Extract<RequestMessage, { type: 'queryLines' }>
+export type QueryLinesResponseMessage = ResponseForRequestMessage<QueryLinesRequestMessage>
+
+export type StepRequestMessage = Extract<RequestMessage, { type: 'step' }>
+export type StepResponseMessage = ResponseForRequestMessage<StepRequestMessage>
+
+export type CurrentFramesRequestMessage = Extract<RequestMessage, { type: 'currentFrames' }>
+export type CurrentFramesResponseMessage = ResponseForRequestMessage<CurrentFramesRequestMessage>
+
+export type OutputRequestMessage = Extract<RequestMessage, { type: 'output' }>
+export type OutputResponseMessage = ResponseForRequestMessage<OutputRequestMessage>
+
+export type RunRequestMessage = Extract<RequestMessage, { type: 'run' }>
+export type RunResponseMessage = ResponseForRequestMessage<RunRequestMessage>
+
+export type StopRequestMessage = Extract<RequestMessage, { type: 'stop' }>
