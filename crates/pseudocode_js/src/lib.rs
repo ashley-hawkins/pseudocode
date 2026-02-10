@@ -6,6 +6,31 @@ use pseudocode::{
 use pseudocode_frontend::write_runtime_error;
 use wasm_bindgen::prelude::*;
 
+enum StepResult {
+    Continued,
+    Errored,
+    Halted(pseudocode::interpreter::HaltResult),
+}
+
+#[wasm_bindgen]
+pub struct StepResultJs(StepResult);
+
+#[wasm_bindgen]
+impl StepResultJs {
+    #[wasm_bindgen(js_name = shallContinue)]
+    pub fn shall_continue(&self) -> bool {
+        matches!(self.0, StepResult::Continued)
+    }
+
+    #[wasm_bindgen(js_name = returnValue)]
+    pub fn return_value(&self) -> Option<ValueJs> {
+        match self.0 {
+            StepResult::Halted(ref halt_result) => Some(ValueJs(halt_result.return_value.clone())),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub struct ValueJs(pseudocode::instruction::Value);
 
@@ -114,14 +139,18 @@ impl ProgramJs {
         String::from_utf8(self.output.get_ref().clone()).ok()
     }
 
-    pub fn step(&mut self) -> bool {
+    pub fn step(&mut self) -> StepResultJs {
         match self
             .state
             .step_with_print_dest(&self.program, &mut self.output)
         {
             Ok(step_result) => match step_result {
-                pseudocode::interpreter::StepResult::Continued => true,
-                pseudocode::interpreter::StepResult::Halted(_) => false,
+                pseudocode::interpreter::StepResult::Continued => {
+                    StepResultJs(StepResult::Continued)
+                }
+                pseudocode::interpreter::StepResult::Halted(halt_result) => {
+                    StepResultJs(StepResult::Halted(halt_result))
+                }
             },
             Err(runtime_error) => {
                 write_runtime_error(
@@ -130,7 +159,7 @@ impl ProgramJs {
                     &runtime_error,
                     &mut self.output,
                 );
-                false
+                StepResultJs(StepResult::Errored)
             }
         }
     }

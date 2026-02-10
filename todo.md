@@ -5,6 +5,7 @@
 #### Functionality
 
 - [x] Move interpreter into a web worker so it doesn't need to yield every 10k instructions to keep the page responsive
+- [x] Display the final output of the program
 - [ ] Completely decouple program running from the editor component - editor should only be for the input code, the breakpoints, and the current line display
 - [ ] Save state for the environment editor (will persist)
 - [ ] Save state for the output panel (not to persist)
@@ -13,7 +14,6 @@
 - [ ] Save current editor state, per language
 - [ ] Allow naming and saving a program to local storage, and re-loading it
 - [ ] Provide sample programs for each language (maybe incorporated into the same system that is used to load saved user-written programs from local storage)
-- [ ] Display the final output of the program
 - [ ] Use SharedArrayBuffer to find out when to yield, rather than yielding every so many milliseconds.
 
 #### Visual/Layout

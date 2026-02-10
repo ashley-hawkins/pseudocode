@@ -130,31 +130,31 @@ fn unary_operation(
     })
 }
 
-pub enum StepResult {
-    Continued,
-    Halted(Environment),
-}
-
-pub struct ProgramResult {
+pub struct HaltResult {
     pub environment: Environment,
     pub return_value: Value,
 }
 
-pub fn run_program(program: &Program) -> Result<ProgramResult, RuntimeError> {
+pub enum StepResult {
+    Continued,
+    Halted(HaltResult),
+}
+
+pub fn run_program(program: &Program) -> Result<HaltResult, RuntimeError> {
     run_program_with_environment(program, Environment::default())
 }
 
 pub fn run_program_with_environment(
     program: &Program,
     environment: Environment,
-) -> Result<ProgramResult, RuntimeError> {
+) -> Result<HaltResult, RuntimeError> {
     run_program_with_environment_and_print_dest(program, environment, &mut io::stdout())
 }
 
 pub fn run_program_with_print_dest(
     program: &Program,
     print_dest: &mut impl std::io::Write,
-) -> Result<ProgramResult, RuntimeError> {
+) -> Result<HaltResult, RuntimeError> {
     run_program_with_environment_and_print_dest(program, Environment::default(), print_dest)
 }
 
@@ -162,21 +162,17 @@ pub fn run_program_with_environment_and_print_dest(
     program: &Program,
     environment: Environment,
     print_dest: &mut impl std::io::Write,
-) -> Result<ProgramResult, RuntimeError> {
+) -> Result<HaltResult, RuntimeError> {
     let mut state = InterpreterState::new_with_environment(environment);
 
-    let final_env = loop {
+    let halt_result = loop {
         match state.step_with_print_dest(program, print_dest)? {
             StepResult::Continued => {}
-            StepResult::Halted(final_env) => break final_env,
+            StepResult::Halted(halt_result) => break halt_result,
         }
     };
-    let return_value = state.pop_value().inner;
 
-    Ok(ProgramResult {
-        environment: final_env,
-        return_value,
-    })
+    Ok(halt_result)
 }
 
 impl InterpreterState {
@@ -439,7 +435,10 @@ impl InterpreterState {
     ) -> Result<StepResult, RuntimeError> {
         if self.instruction_offset >= program.len() {
             todo!("decide whether this should be an error");
-            return Ok(StepResult::Halted(Environment::default()));
+            return Ok(StepResult::Halted(HaltResult {
+                environment: Environment::default(),
+                return_value: Value::None,
+            }));
         }
 
         let control_flow = self.run_instruction(program, print_dest)?;
@@ -459,7 +458,10 @@ impl InterpreterState {
                     }
                     None => {
                         self.set_instruction_offset(usize::MAX);
-                        return Ok(StepResult::Halted(frame.environment));
+                        return Ok(StepResult::Halted(HaltResult {
+                            environment: frame.environment,
+                            return_value: self.pop_value().inner,
+                        }));
                     }
                 }
             }

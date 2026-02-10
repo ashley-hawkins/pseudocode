@@ -1,5 +1,6 @@
-import pseudocodeInit, { ProgramJs, Mode, ValueJs } from 'pseudocode_js'
+import pseudocodeInit, { ProgramJs, Mode, ValueJs, StepResultJs } from 'pseudocode_js'
 import { RunMode, type RequestMessage, type ResponseForRequestMessage, type ResponseMessage } from './workerProtocol'
+import { valueToString } from './util';
 
 await pseudocodeInit();
 
@@ -128,8 +129,10 @@ async function run(m: Extract<RequestMessage, { type: 'run' }>) {
   }
 
   let lastYieldTime = Date.now()
+  let lastStepResult: StepResultJs | undefined;
   while (shouldContinue) {
-    shouldContinue = program.step()
+    lastStepResult = program.step()
+    shouldContinue = lastStepResult.shallContinue()
 
     const q = program.querySourceLines()
     if (q.at_line_boundary()) {
@@ -152,7 +155,17 @@ async function run(m: Extract<RequestMessage, { type: 'run' }>) {
     if (!shouldContinue) break
   }
 
-  const out = program.output() || ''
+  let out = program.output() || ''
+
+  if (lastStepResult !== undefined) {
+    const returnValue = lastStepResult.returnValue()
+    if (returnValue !== undefined) {
+      if (out) out += '\n'
+      out += `Program returned: ${valueToString(returnValue.toJs())}`
+    }
+  }
+
+
   const frames = mapFramesToJs(program.currentFrames())
   const res: ResponseMessage = { type: 'runResult', requestId: m.requestId, output: out, lastLine, nextLine, frames }
   postMessage(res)
@@ -193,11 +206,12 @@ async function handleMessage(m: RequestMessage) {
         msgQueue.push(m)
         return;
       }
-      const cont = program.step()
+      const stepResult = program.step()
+      const cont = stepResult.shallContinue()
       const q = program.querySourceLines()
       const out = program.output() || ''
       const frames = mapFramesToJs(program.currentFrames())
-      const res: ResponseMessage = { type: 'stepResult', requestId: m.requestId, cont, last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
+      const res: ResponseMessage = { type: 'stepResult', requestId: m.requestId, cont, return_value: stepResult.returnValue()?.toJs(), last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
     }
