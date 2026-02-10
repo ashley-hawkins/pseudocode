@@ -7,12 +7,12 @@ use pseudocode_frontend::write_runtime_error;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub struct ValueWrapper(pseudocode::instruction::Value);
+pub struct ValueJs(pseudocode::instruction::Value);
 
 #[wasm_bindgen]
-impl ValueWrapper {
-    #[wasm_bindgen]
-    pub fn as_js(&self) -> JsValue {
+impl ValueJs {
+    #[wasm_bindgen(js_name = toJs)]
+    pub fn to_js(&self) -> JsValue {
         fn value_to_js(value: &pseudocode::instruction::Value) -> JsValue {
             match value {
                 pseudocode::instruction::Value::Number(n) => JsValue::from_f64(*n),
@@ -38,7 +38,7 @@ impl ValueWrapper {
 
 #[wasm_bindgen]
 #[derive(Default)]
-pub struct ProgramWrapper {
+pub struct ProgramJs {
     source_code: String,
     program: OwnedProgram,
     output: std::io::Cursor<Vec<u8>>,
@@ -53,7 +53,7 @@ pub enum Mode {
 }
 
 #[wasm_bindgen]
-impl ProgramWrapper {
+impl ProgramJs {
     fn clear_output(&mut self) {
         self.output.get_mut().clear();
         self.output.set_position(0);
@@ -64,7 +64,7 @@ impl ProgramWrapper {
         Self::default()
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = loadSource)]
     pub fn load_source(&mut self, src: &str, mode: Mode) -> bool {
         self.clear_output();
         self.state = InterpreterState::new();
@@ -90,6 +90,7 @@ impl ProgramWrapper {
         true
     }
 
+    #[wasm_bindgen(js_name = resetStateWithEnvironment)]
     pub fn reset_state_with_environment(&mut self, env_initializers: Vec<String>) -> bool {
         let Some(initial_environment) =
             pseudocode_frontend::create_initial_environment(&env_initializers, &mut self.output)
@@ -102,7 +103,6 @@ impl ProgramWrapper {
         true
     }
 
-    #[wasm_bindgen]
     pub fn clear(&mut self) {
         self.source_code.clear();
         self.program.clear();
@@ -110,12 +110,10 @@ impl ProgramWrapper {
         self.state = InterpreterState::new();
     }
 
-    #[wasm_bindgen]
     pub fn output(&self) -> Option<String> {
         String::from_utf8(self.output.get_ref().clone()).ok()
     }
 
-    #[wasm_bindgen]
     pub fn step(&mut self) -> bool {
         match self
             .state
@@ -137,12 +135,12 @@ impl ProgramWrapper {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = currentEnvironment, unchecked_return_type = "Map<string, ValueJs>")]
     pub fn current_environment(&self) -> Map {
         self.frame_at(0).unwrap()
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = frameAt, unchecked_return_type = "Map<string, ValueJs> | undefined")]
     pub fn frame_at(&self, index: usize) -> Option<Map> {
         let frame = self
             .state
@@ -154,14 +152,14 @@ impl ProgramWrapper {
         let obj = js_sys::Map::new();
 
         for (key, value) in env.iter() {
-            let wrapped = ValueWrapper(value.clone());
-            obj.set(&JsValue::from_str(key), &wrapped.as_js());
+            let wrapped = ValueJs(value.clone());
+            obj.set(&JsValue::from_str(key), &wrapped.into());
         }
 
         Some(obj)
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = currentFrames, unchecked_return_type = "Array<Map<string, ValueJs>>")]
     pub fn current_frames(&self) -> Vec<Map> {
         let mut frames = Vec::new();
         for i in 0..self.state.frame_stack.len() {
@@ -170,6 +168,7 @@ impl ProgramWrapper {
         frames
     }
 
+    #[wasm_bindgen(js_name = querySourceLines)]
     pub fn query_source_lines(&mut self) -> LineQueryResult {
         let last_line = self
             .state

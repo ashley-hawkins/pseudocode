@@ -1,4 +1,4 @@
-import pseudocodeInit, { ProgramWrapper, Mode } from 'pseudocode_js'
+import pseudocodeInit, { ProgramJs, Mode, ValueJs } from 'pseudocode_js'
 import { RunMode, type RequestMessage, type ResponseForRequestMessage, type ResponseMessage } from './workerProtocol'
 
 await pseudocodeInit();
@@ -14,7 +14,7 @@ function yieldToEventLoop() {
 
 const yieldIntervalMs = 200 as const
 
-const wrapper = new ProgramWrapper()
+const program = new ProgramJs()
 class MessageQueue<T> {
   private queue: T[] = []
   private waiting: [(value: T | PromiseLike<T>) => void, (reason?: any) => void][] = []
@@ -74,6 +74,10 @@ async function processExistingMessages() {
   }
 }
 
+function mapFramesToJs(frames: Array<Map<string, ValueJs>>): Array<Map<string, any>> {
+  return frames.map(x => (new Map([...x.entries()].map(([k, v]) => [k, v.toJs()]))))
+}
+
 async function run(m: Extract<RequestMessage, { type: 'run' }>) {
   if (running) {
     const res: ResponseMessage = { type: 'error', requestId: m.requestId, message: 'Program is already running' } satisfies ResponseForRequestMessage<typeof m>
@@ -109,7 +113,7 @@ async function run(m: Extract<RequestMessage, { type: 'run' }>) {
     return false
   }
 
-  const initialQuery = wrapper.query_source_lines()
+  const initialQuery = program.querySourceLines()
   nextLine = initialQuery.next_line
   lastLine = initialQuery.last_line
 
@@ -125,9 +129,9 @@ async function run(m: Extract<RequestMessage, { type: 'run' }>) {
 
   let lastYieldTime = Date.now()
   while (shouldContinue) {
-    shouldContinue = wrapper.step()
+    shouldContinue = program.step()
 
-    const q = wrapper.query_source_lines()
+    const q = program.querySourceLines()
     if (q.at_line_boundary()) {
       lastLine = q.last_line
       nextLine = q.next_line
@@ -148,8 +152,8 @@ async function run(m: Extract<RequestMessage, { type: 'run' }>) {
     if (!shouldContinue) break
   }
 
-  const out = wrapper.output() || ''
-  const frames = wrapper.current_frames()
+  const out = program.output() || ''
+  const frames = mapFramesToJs(program.currentFrames())
   const res: ResponseMessage = { type: 'runResult', requestId: m.requestId, output: out, lastLine, nextLine, frames }
   postMessage(res)
   running = false
@@ -162,8 +166,8 @@ async function handleMessage(m: RequestMessage) {
         msgQueue.push(m)
         return;
       }
-      const ok = wrapper.load_source(m.source ?? '', m.mode ?? Mode.Structured)
-      const out = wrapper.output() || ''
+      const ok = program.loadSource(m.source ?? '', m.mode ?? Mode.Structured)
+      const out = program.output() || ''
       const res = { type: 'loadResult', requestId: m.requestId, ok, output: out } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
@@ -173,13 +177,13 @@ async function handleMessage(m: RequestMessage) {
         msgQueue.push(m)
         return;
       }
-      wrapper.reset_state_with_environment(m.env ?? [])
+      program.resetStateWithEnvironment(m.env ?? [])
       const res: ResponseMessage = { type: 'resetResult', requestId: m.requestId } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
     }
     case 'queryLines': {
-      const q = wrapper.query_source_lines()
+      const q = program.querySourceLines()
       const res: ResponseMessage = { type: 'queryResult', requestId: m.requestId, last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary() } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
@@ -189,22 +193,22 @@ async function handleMessage(m: RequestMessage) {
         msgQueue.push(m)
         return;
       }
-      const cont = wrapper.step()
-      const q = wrapper.query_source_lines()
-      const out = wrapper.output() || ''
-      const frames = wrapper.current_frames()
+      const cont = program.step()
+      const q = program.querySourceLines()
+      const out = program.output() || ''
+      const frames = mapFramesToJs(program.currentFrames())
       const res: ResponseMessage = { type: 'stepResult', requestId: m.requestId, cont, last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
     }
     case 'currentFrames': {
-      const frames = wrapper.current_frames()
+      const frames = mapFramesToJs(program.currentFrames())
       const res: ResponseMessage = { type: 'currentFramesResult', requestId: m.requestId, frames } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
     }
     case 'output': {
-      const out = wrapper.output() || ''
+      const out = program.output() || ''
       const res: ResponseMessage = { type: 'outputResult', requestId: m.requestId, output: out } satisfies ResponseForRequestMessage<typeof m>
       postMessage(res)
       break
