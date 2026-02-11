@@ -229,8 +229,11 @@ fn is_start_of_line(program: &Program, instruction_index: usize) -> bool {
 
 #[wasm_bindgen]
 pub struct LineQueryResult {
+    #[wasm_bindgen(js_name = lastLine)]
     pub last_line: Option<usize>,
+    #[wasm_bindgen(js_name = nextLine)]
     pub next_line: Option<usize>,
+    #[wasm_bindgen(js_name = nextLineIsStartOfLine)]
     pub next_line_is_start_of_line: bool,
 }
 
@@ -238,7 +241,7 @@ pub struct LineQueryResult {
 impl LineQueryResult {
     /// Returns true if the program is transitioning to the target line
     /// in the next step.
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = atLineBoundary)]
     pub fn at_line_boundary(&self) -> bool {
         self.next_line_is_start_of_line
         // || match (self.last_line, self.next_line) {

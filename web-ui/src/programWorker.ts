@@ -1,4 +1,4 @@
-import pseudocodeInit, { ProgramJs, Mode, ValueJs, StepResultJs } from 'pseudocode_js'
+import pseudocodeInit, { ProgramJs, Mode, ValueJs, StepResultJs, LineQueryResult } from 'pseudocode_js'
 import { RunMode, type CurrentFramesRequestMessage, type CurrentFramesResponseMessage, type LoadRequestMessage, type LoadResponseMessage, type OutputRequestMessage, type OutputResponseMessage, type QueryLinesRequestMessage, type QueryLinesResponseMessage, type RequestMessage, type ResetRequestMessage, type ResetResponseMessage, type ResponseForRequestMessage, type ResponseMessage, type RunRequestMessage, type RunResponseMessage, type StepRequestMessage, type StepResponseMessage } from './workerProtocol'
 import { valueToString } from './util';
 
@@ -92,7 +92,7 @@ function reset(m: ResetRequestMessage): ResetResponseMessage {
 
 function queryLines(m: QueryLinesRequestMessage): QueryLinesResponseMessage {
   const q = program.querySourceLines()
-  return { type: 'queryResult', requestId: m.requestId, last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary() } satisfies ResponseForRequestMessage<typeof m>
+  return { type: 'queryResult', requestId: m.requestId, lastLine: q.lastLine, nextLine: q.nextLine, atLineBoundary: q.atLineBoundary() } satisfies ResponseForRequestMessage<typeof m>
 }
 
 function step(m: StepRequestMessage): StepResponseMessage {
@@ -101,7 +101,7 @@ function step(m: StepRequestMessage): StepResponseMessage {
   const q = program.querySourceLines()
   const out = program.output() || ''
   const frames = mapFramesToJs(program.currentFrames())
-  return { type: 'stepResult', requestId: m.requestId, cont, return_value: stepResult.returnValue()?.toJs(), last_line: q.last_line, next_line: q.next_line, at_line_boundary: q.at_line_boundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
+  return { type: 'stepResult', requestId: m.requestId, cont, return_value: stepResult.returnValue()?.toJs(), lastLine: q.lastLine, nextLine: q.nextLine, atLineBoundary: q.atLineBoundary(), output: out, frames } satisfies ResponseForRequestMessage<typeof m>
 }
 
 function currentFrames(m: CurrentFramesRequestMessage): CurrentFramesResponseMessage {
@@ -126,15 +126,15 @@ async function run(m: RunRequestMessage): Promise<RunResponseMessage> {
   const runMode = m.options.type
   const firstStep = m.firstStep ?? false
 
-  const finishedStepping = (queryResult: { next_line?: number; last_line?: number; at_line_boundary: () => boolean }): boolean => {
-    const next = queryResult.next_line
+  const finishedStepping = (queryResult: LineQueryResult): boolean => {
+    const next = queryResult.nextLine
     if (next === undefined) {
       lastLine = nextLine
       nextLine = undefined
       return true
     }
 
-    if (!queryResult.at_line_boundary()) {
+    if (!queryResult.atLineBoundary()) {
       return false
     }
 
@@ -148,8 +148,8 @@ async function run(m: RunRequestMessage): Promise<RunResponseMessage> {
   }
 
   const initialQuery = program.querySourceLines()
-  nextLine = initialQuery.next_line
-  lastLine = initialQuery.last_line
+  nextLine = initialQuery.nextLine
+  lastLine = initialQuery.lastLine
 
   let shouldContinue = true
 
@@ -157,7 +157,7 @@ async function run(m: RunRequestMessage): Promise<RunResponseMessage> {
     shouldContinue = !finishedStepping(initialQuery)
   }
 
-  if (initialQuery.next_line === undefined) {
+  if (initialQuery.nextLine === undefined) {
     shouldContinue = false;
   }
 
@@ -168,9 +168,9 @@ async function run(m: RunRequestMessage): Promise<RunResponseMessage> {
     shouldContinue = lastStepResult.shallContinue()
 
     const q = program.querySourceLines()
-    if (q.at_line_boundary()) {
-      lastLine = q.last_line
-      nextLine = q.next_line
+    if (q.atLineBoundary()) {
+      lastLine = q.lastLine
+      nextLine = q.nextLine
     }
 
     if (finishedStepping(q)) {

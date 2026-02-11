@@ -49,11 +49,15 @@ export function isRequestWithId(message: RequestMessage): message is RequestWith
   return 'requestId' in message
 }
 
+interface QueryResult {
+  lastLine?: number, nextLine?: number, atLineBoundary: boolean
+}
+
 export type ResponseMessage = RequestWithIdBase & (
   | { type: 'loadResult', ok: boolean, output: string }
   | { type: 'resetResult' }
-  | { type: 'queryResult', last_line?: number, next_line?: number, at_line_boundary: boolean }
-  | { type: 'stepResult', cont: boolean, return_value: NonNullable<any> | undefined, last_line?: number, next_line?: number, at_line_boundary: boolean, output: string, frames: any[] }
+  | { type: 'queryResult' } & QueryResult
+  | { type: 'stepResult', cont: boolean, return_value: NonNullable<any> | undefined, lastLine?: number, nextLine?: number, atLineBoundary: boolean, output: string, frames: any[] }
   | { type: 'currentFramesResult', frames: any[] }
   | { type: 'outputResult', output: string }
   | { type: 'runResult', output: string, lastLine?: number, nextLine?: number, frames: any[] }
