@@ -2,5 +2,5 @@ export function valueToString(val: any): string {
     if (val instanceof Array) {
         return `[${val.map(valueToString).join(', ')}]`
     }
-    return val.toString()
+    return String(val)
 }
