@@ -26,6 +26,7 @@
 
 ### Interpreter
 - [ ] Fully serialize and deserialize interpreter state to JSON... Need to be able to create shared values in the same way as they were shared in the original state somehow (for arrays).
+- [ ] Runtime errors instead of panics for more stuff (e.g. array called with incorrect number of parameters)
 
 ### Parser
 - [ ] Nicer error messages for syntax issues that are effectively unambiguous. E.g. missing `do` at the end of the header of a `while` or `for` statement.
