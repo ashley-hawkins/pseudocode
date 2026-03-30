@@ -1,6 +1,6 @@
 # Pseudocode Interpreter
 
-<!-- Web demo is available at https://users.sussex.ac.uk/~ah2084/pseudocode -->
+Web demo is available at https://users.sussex.ac.uk/~ah2084/pseudocode
 
 Interpreter for the pseudocode languages used in Programming Concepts module taught by Philip Saville.
 
