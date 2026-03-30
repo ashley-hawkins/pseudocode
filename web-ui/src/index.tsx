@@ -11,6 +11,7 @@ import type { JSXElement } from 'solid-js';
 import { EnvironmentSelector } from './EnvironmentSelector.tsx';
 import type { IGoldenLayoutProps } from './types.ts';
 import { FrameStackDisplay } from './FrameStackDisplay.tsx';
+import ProgramRunner from './ProgramRunner.tsx';
 
 const solidFactory = (TheComponent: ((props: IGoldenLayoutProps) => JSXElement)): GoldenLayout.ComponentFactoryFunction => {
     console.log("Creating Solid Component:", TheComponent.name);
@@ -75,9 +76,14 @@ if (!new URL(window.location.href).searchParams.has("gl-window")) {
 const layout = new GoldenLayout(container)
 layout.resizeWithContainerAutomatically = true;
 
+if (!new URL(window.location.href).searchParams.has("gl-window")) {
+    new ProgramRunner(layout.eventHub)
+}
+
 layout.registerSolidComponent(ProgramEditor)
 layout.registerSolidComponent(OutputPanel)
 layout.registerSolidComponent(EnvironmentSelector)
 layout.registerSolidComponent(FrameStackDisplay)
-
-layout.loadLayout(layoutConfig);
+if (layoutConfig.root) {
+    layout.loadLayout(layoutConfig);
+}

@@ -1,4 +1,4 @@
-import { requestIdGenerator as createRequestIdGenerator, type RequestId, type RequestPayload, type RequestWithoutId, type ResponseForRequestPayload, type ResponseMessage, type RunMode, type RunOptions } from './workerProtocol'
+import { requestIdGenerator as createRequestIdGenerator, type RequestId, type RequestPayload, type RequestWithoutId, type ResponseForRequestPayload, type ResponseMessage, type RunOptions } from './workerProtocol'
 
 export default class ProgramWorkerClient {
   worker: Worker

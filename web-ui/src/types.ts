@@ -1,9 +1,13 @@
 import type { ComponentContainer, EventHub, JsonValue } from "golden-layout";
+import type { ProgramRunnerRequestMessage, ProgramRunnerResponseMessage } from "./programRunnerProtocol";
 
 export const enum UserBroadcastType {
   parserOutput,
   envVarsUpdate,
-  frameStackUpdate
+  frameStackUpdate,
+  programRunnerUpdate,
+  programRunnerRequest,
+  programRunnerResponse,
 }
 
 interface ParserOutputBroadcastData {
@@ -21,7 +25,28 @@ interface FrameStackUpdateBroadcastData {
   frameStack: Map<string, any>[]
 }
 
-export type UserBroadcastData = ParserOutputBroadcastData | EnvVarsUpdateBroadcastData | FrameStackUpdateBroadcastData;
+interface ProgramRunnerUpdateData {
+  type: UserBroadcastType.programRunnerUpdate,
+  running: boolean
+}
+
+interface ProgramRunnerRequestBroadcastData {
+  type: UserBroadcastType.programRunnerRequest,
+  message: ProgramRunnerRequestMessage
+}
+
+interface ProgramRunnerResponseBroadcastData {
+  type: UserBroadcastType.programRunnerResponse,
+  message: ProgramRunnerResponseMessage
+}
+
+export type UserBroadcastData =
+  | ParserOutputBroadcastData
+  | EnvVarsUpdateBroadcastData
+  | FrameStackUpdateBroadcastData
+  | ProgramRunnerUpdateData
+  | ProgramRunnerRequestBroadcastData
+  | ProgramRunnerResponseBroadcastData;
 
 export function emitUserBroadcast (eventHub: EventHub, data: UserBroadcastData) {
   eventHub.emit('userBroadcast', data);

@@ -1,12 +1,30 @@
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, onMount } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
-import { UserBroadcastType, type IGoldenLayoutProps } from "./types";
+import type { IGoldenLayoutProps } from "./types";
+import ProgramRunnerClient from "./ProgramRunnerClient";
 
 export function EnvironmentSelector(props: IGoldenLayoutProps) {
     let [envVars, setEnvVars] = createStore<{ key: string, value: string }[]>([]);
+    const runnerClient = new ProgramRunnerClient(props.glContainer.layoutManager.eventHub)
+    let envLoaded = false
+
+    onMount(() => {
+        void runnerClient.queryState()
+            .then((response) => {
+                setEnvVars(response.state.envVars)
+            })
+            .catch(() => {
+            })
+            .finally(() => {
+                envLoaded = true
+            })
+    })
 
     createEffect(() => {
-        props.glContainer.layoutManager.eventHub.emitUserBroadcast({ type: UserBroadcastType.envVarsUpdate, envVars: unwrap(envVars) });
+        if (!envLoaded) {
+            return
+        }
+        void runnerClient.setEnvironment(unwrap(envVars));
     });
 
     return (

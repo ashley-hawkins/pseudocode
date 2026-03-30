@@ -8,6 +8,7 @@ export default function OutputPanel(props: IGoldenLayoutProps) {
     const [parserOutput, setParserOutput] = createSignal<string>("")
 
     onUserBroadcast(props.glContainer.layoutManager.eventHub, (broadcastData: UserBroadcastData) => {
+        console.log("OutputPanel received broadcast:", broadcastData)
         if (broadcastData.type === UserBroadcastType.parserOutput) {
             setParserOutput(broadcastData.output)
         }

@@ -1,5 +1,5 @@
 import pseudocodeInit, { ProgramJs, Mode, ValueJs, StepResultJs, LineQueryResult } from 'pseudocode_js'
-import { RunMode, type CurrentFramesRequestMessage, type CurrentFramesResponseMessage, type LoadRequestMessage, type LoadResponseMessage, type OutputRequestMessage, type OutputResponseMessage, type QueryLinesRequestMessage, type QueryLinesResponseMessage, type RequestMessage, type ResetRequestMessage, type ResetResponseMessage, type ResponseForRequestMessage, type ResponseMessage, type RunRequestMessage, type RunResponseMessage, type StepRequestMessage, type StepResponseMessage } from './workerProtocol'
+import { RunMode, type CurrentFramesRequestMessage, type CurrentFramesResponseMessage, type LoadRequestMessage, type LoadResponseMessage, type OutputRequestMessage, type OutputResponseMessage, type QueryLinesRequestMessage, type QueryLinesResponseMessage, type RequestMessage, type ResetRequestMessage, type ResetResponseMessage, type ResponseForRequestMessage, type RunRequestMessage, type RunResponseMessage, type StepRequestMessage, type StepResponseMessage } from './workerProtocol'
 import { valueToString } from './util';
 
 await pseudocodeInit();

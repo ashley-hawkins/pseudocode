@@ -1,14 +1,13 @@
 import { createEffect, createSignal, onMount } from 'solid-js'
 
 import { Mode } from 'pseudocode_js'
-import ProgramWorkerClient from './programWorkerClient'
+import ProgramRunnerClient from './ProgramRunnerClient'
 import { EditorView, basicSetup } from 'codemirror'
 import { gutter, GutterMarker } from '@codemirror/view'
 import { emitUserBroadcast, onUserBroadcast, UserBroadcastType, type IGoldenLayoutProps, type UserBroadcastData } from './types'
 
 import { StateField, StateEffect, RangeSet, EditorState, Transaction, Range } from "@codemirror/state"
 import type { JsonValue } from 'golden-layout'
-import { RunMode, type RunOptions } from './workerProtocol'
 
 const nextExecutionMarker = new class extends GutterMarker {
   elementClass: string = "cm-next-execution-marker"
@@ -155,8 +154,9 @@ export interface ProgramEditorState {
 export default function ProgramEditor(props: IGoldenLayoutProps) {
   const [parserOutput, setParserOutput] = createSignal<string>("")
   const [frameStack, setFrameStack] = createSignal<Map<string, any>[]>([])
+  const [currentlyRunning, setCurrentlyRunning] = createSignal<boolean>(false)
 
-  let envVars: { key: string, value: string }[] = []
+  const runnerClient = new ProgramRunnerClient(props.glContainer.layoutManager.eventHub)
 
   createEffect(() => {
     emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.parserOutput, output: parserOutput() });
@@ -166,11 +166,13 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
     emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.frameStackUpdate, frameStack: frameStack() });
   })
 
-  let workerClient: ProgramWorkerClient = new ProgramWorkerClient()
+  createEffect(() => {
+    emitUserBroadcast(props.glContainer.layoutManager.eventHub, { type: UserBroadcastType.programRunnerUpdate, running: currentlyRunning() })
+  })
 
   onUserBroadcast(props.glContainer.layoutManager.eventHub, (broadcastData: UserBroadcastData) => {
-    if (broadcastData.type === UserBroadcastType.envVarsUpdate) {
-      envVars = broadcastData.envVars
+    if (broadcastData.type === UserBroadcastType.programRunnerUpdate) {
+      setCurrentlyRunning(broadcastData.running)
     }
   })
 
@@ -216,66 +218,74 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
       }
       return serializedState;
     }
+
+    void runnerClient.queryState()
+      .then((response) => {
+        applyRunnerState(response.state)
+      })
+      .catch((error) => {
+        setParserOutput(`Error querying program state: ${error instanceof Error ? error.message : String(error)}`)
+      })
   })
 
   let selectedMode: Mode = Mode.Structured
 
-  const [currentlyRunning, setCurrentlyRunning] = createSignal<boolean>(false);
-
-  let stepProgram = async (runOptions: RunOptions, firstStep: boolean = false) => {
-    if (currentlyRunning()) {
-      return
-    }
-    setCurrentlyRunning(true);
-    let previousLine: number | undefined = undefined
-    let nextLine: number | undefined = undefined
-
-    const runResult = await workerClient.run(runOptions, firstStep)
-
-    if (runResult.type === 'error') {
-      setParserOutput(`Error during execution: ${runResult.message}`)
-      setCurrentlyRunning(false)
-      return
-    }
-
-    previousLine = runResult.lastLine
-    nextLine = runResult.nextLine
-
-    setParserOutput(runResult.output || 'No runtime output.')
-    setExecutionState(editor, previousLine, nextLine)
-    setFrameStack(runResult.frames)
-    setCurrentlyRunning(false)
-  }
-
-  let continueWithBreakpointSet = (breakpoints: Set<number>, firstStep: boolean = false) => {
-    stepProgram({ type: RunMode.LineBasedBreakpoint, breakpoints }, firstStep)
-  }
-
-  let continueProgramToNextBreakpoint = (firstStep: boolean = false) => {
-    let breakpoints = new Set<number>()
+  function breakpointsFromEditor(): Set<number> {
+    const breakpoints = new Set<number>()
     editor.state.field(breakpointState).between(0, editor.state.doc.length, (from, _to) => {
       const line = editor.state.doc.lineAt(from)
       breakpoints.add(line.number - 1)
     })
-    continueWithBreakpointSet(breakpoints, firstStep)
+    return breakpoints
   }
 
-  let stepLine = () => {
-    stepProgram({ type: RunMode.NextLine })
+  function applyRunnerState(state: { running: boolean, output: string, lastLine?: number, nextLine?: number, frames: Map<string, any>[] }) {
+    setParserOutput(state.output || 'No runtime output.')
+    setFrameStack(state.frames)
+    setExecutionState(editor, state.lastLine, state.nextLine)
+    setCurrentlyRunning(state.running)
   }
 
-  let runProgram = async () => {
-    const src = editor?.state?.doc.toString() ?? ''
-    const loadRes = await workerClient.loadSource(src, selectedMode)
-    if (loadRes.type != 'error' && loadRes.ok) {
-      await workerClient.resetWithEnv(envVars.map((ev) => `${ev.key}:${ev.value}`))
-      continueProgramToNextBreakpoint(true)
-    } else {
-      if (loadRes.type === 'error') {
-        setParserOutput(`Error loading program: ${loadRes.message}`)
-      } else {
-        setParserOutput(loadRes.output || 'No parser output.')
-      }
+  async function runProgram() {
+    setCurrentlyRunning(true)
+    const source = editor?.state?.doc.toString() ?? ''
+    try {
+      const state = await runnerClient.runProgram(source, selectedMode, breakpointsFromEditor())
+      applyRunnerState(state)
+    } catch (error) {
+      setCurrentlyRunning(false)
+      setParserOutput(`Error running program: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function continueProgramToNextBreakpoint() {
+    setCurrentlyRunning(true)
+    try {
+      const response = await runnerClient.continueToNextBreakpoint(breakpointsFromEditor())
+      applyRunnerState(response.state)
+    } catch (error) {
+      setCurrentlyRunning(false)
+      setParserOutput(`Error continuing program: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function stepLine() {
+    setCurrentlyRunning(true)
+    try {
+      const response = await runnerClient.stepLine()
+      applyRunnerState(response.state)
+    } catch (error) {
+      setCurrentlyRunning(false)
+      setParserOutput(`Error stepping program: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function stopProgram() {
+    setCurrentlyRunning(false)
+    try {
+      await runnerClient.stop()
+    } catch (error) {
+      setParserOutput(`Error stopping program: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -296,7 +306,7 @@ export default function ProgramEditor(props: IGoldenLayoutProps) {
             </select>
             {
               currentlyRunning() ? (
-                <button class="btn flex-1" onClick={() => workerClient.stop()}>Stop</button>
+                <button class="btn flex-1" onClick={stopProgram}>Stop</button>
               ) : (
                 <button class="btn flex-1" onClick={runProgram}>Run</button>
               )
