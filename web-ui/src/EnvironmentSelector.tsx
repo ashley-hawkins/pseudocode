@@ -1,12 +1,12 @@
-import { createEffect, onMount } from "solid-js";
-import { createStore, unwrap } from "solid-js/store";
+import { createEffect, createSignal, onMount } from "solid-js";
+import { createStore } from "solid-js/store";
 import type { IGoldenLayoutProps } from "./types";
 import ProgramRunnerClient from "./ProgramRunnerClient";
 
 export function EnvironmentSelector(props: IGoldenLayoutProps) {
     let [envVars, setEnvVars] = createStore<{ key: string, value: string }[]>([]);
     const runnerClient = new ProgramRunnerClient(props.glContainer.layoutManager.eventHub)
-    let envLoaded = false
+    const [envLoaded, setEnvLoaded] = createSignal(false)
 
     onMount(() => {
         void runnerClient.queryState()
@@ -16,15 +16,16 @@ export function EnvironmentSelector(props: IGoldenLayoutProps) {
             .catch(() => {
             })
             .finally(() => {
-                envLoaded = true
+                setEnvLoaded(true)
             })
     })
 
     createEffect(() => {
-        if (!envLoaded) {
+        if (!envLoaded()) {
             return
         }
-        void runnerClient.setEnvironment(unwrap(envVars));
+        const envSnapshot = envVars.map((envVar) => ({ ...envVar }));
+        void runnerClient.setEnvironment(envSnapshot);
     });
 
     return (
