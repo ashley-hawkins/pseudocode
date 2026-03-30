@@ -2,8 +2,6 @@ import pseudocodeInit, { ProgramJs, Mode, ValueJs, StepResultJs, LineQueryResult
 import { RunMode, type CurrentFramesRequestMessage, type CurrentFramesResponseMessage, type LoadRequestMessage, type LoadResponseMessage, type OutputRequestMessage, type OutputResponseMessage, type QueryLinesRequestMessage, type QueryLinesResponseMessage, type RequestMessage, type ResetRequestMessage, type ResetResponseMessage, type ResponseForRequestMessage, type RunRequestMessage, type RunResponseMessage, type StepRequestMessage, type StepResponseMessage } from './workerProtocol'
 import { valueToString } from './util';
 
-await pseudocodeInit();
-
 function yieldToEventLoop() {
   const channel = new MessageChannel();
   channel.port2.start();
@@ -15,7 +13,28 @@ function yieldToEventLoop() {
 
 const yieldIntervalMs = 200 as const
 
-const program = new ProgramJs()
+let program: ProgramJs | undefined = undefined
+let initPromise: Promise<void> | undefined = undefined
+
+async function ensureInitialized() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      await pseudocodeInit()
+      program = new ProgramJs()
+    })()
+  }
+
+  await initPromise
+}
+
+function getProgram(): ProgramJs {
+  if (!program) {
+    throw new Error('Worker not initialized')
+  }
+
+  return program
+}
+
 class MessageQueue<T> {
   private queue: T[] = []
   private waiting: [(value: T | PromiseLike<T>) => void, (reason?: any) => void][] = []
@@ -80,22 +99,26 @@ function mapFramesToJs(frames: Array<Map<string, ValueJs>>): Array<Map<string, a
 }
 
 function load(m: LoadRequestMessage): LoadResponseMessage {
+  const program = getProgram()
   const ok = program.loadSource(m.source ?? '', m.mode ?? Mode.Structured)
   const out = program.output() || ''
   return { type: 'loadResult', requestId: m.requestId, ok, output: out }
 }
 
 function reset(m: ResetRequestMessage): ResetResponseMessage {
+  const program = getProgram()
   program.resetStateWithEnvironment(m.env ?? [])
   return { type: 'resetResult', requestId: m.requestId } satisfies ResponseForRequestMessage<typeof m>
 }
 
 function queryLines(m: QueryLinesRequestMessage): QueryLinesResponseMessage {
+  const program = getProgram()
   const q = program.querySourceLines()
   return { type: 'queryResult', requestId: m.requestId, lastLine: q.lastLine, nextLine: q.nextLine, atLineBoundary: q.atLineBoundary() } satisfies ResponseForRequestMessage<typeof m>
 }
 
 function step(m: StepRequestMessage): StepResponseMessage {
+  const program = getProgram()
   const stepResult = program.step()
   const cont = stepResult.shallContinue()
   const q = program.querySourceLines()
@@ -105,16 +128,19 @@ function step(m: StepRequestMessage): StepResponseMessage {
 }
 
 function currentFrames(m: CurrentFramesRequestMessage): CurrentFramesResponseMessage {
+  const program = getProgram()
   const frames = mapFramesToJs(program.currentFrames())
   return { type: 'currentFramesResult', requestId: m.requestId, frames } satisfies ResponseForRequestMessage<typeof m>
 }
 
 function output(m: OutputRequestMessage): OutputResponseMessage {
+  const program = getProgram()
   const out = program.output() || ''
   return { type: 'outputResult', requestId: m.requestId, output: out } satisfies ResponseForRequestMessage<typeof m>
 }
 
 async function run(m: RunRequestMessage): Promise<RunResponseMessage> {
+  const program = getProgram()
   if (running) {
     return { type: 'error', requestId: m.requestId, message: 'Program is already running' } satisfies ResponseForRequestMessage<typeof m>
   }
@@ -209,6 +235,10 @@ function shouldDefer(m: RequestMessage) {
 }
 
 async function handleMessage(m: RequestMessage) {
+  if (m.type !== 'stop') {
+    await ensureInitialized()
+  }
+
   if (shouldDefer(m)) {
     msgQueue.push(m)
     return;
